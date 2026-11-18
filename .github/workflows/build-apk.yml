@@ -51,3 +51,10 @@ jobs:
           name: AynThorSimulator-debug-apk
           path: app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
+      - name: Publish APK to GitHub Releases
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: build-${{ github.run_number }}
+          name: AynThorSimulator Build #${{ github.run_number }}
+          files: app/build/outputs/apk/debug/*.apk
+          generate_release_notes: true
