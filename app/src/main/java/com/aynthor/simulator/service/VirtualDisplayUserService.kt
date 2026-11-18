@@ -256,9 +256,12 @@ class VirtualDisplayUserService(private val baseContext: Context) : IVirtualDisp
 
     override fun swapSurfaces(topSurface: Surface, bottomSurface: Surface) {
         try {
+            // Detach both first because a Surface can only have one active BufferQueue producer
+            topDisplay?.surface = null
+            bottomDisplay?.surface = null
             topDisplay?.surface = topSurface
             bottomDisplay?.surface = bottomSurface
-            log("Swapped virtual display surfaces")
+            log("Swapped virtual display surfaces cleanly")
         } catch (e: Throwable) {
             log("Failed to swap surfaces", e)
         }

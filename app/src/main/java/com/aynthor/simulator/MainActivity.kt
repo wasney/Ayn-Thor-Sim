@@ -20,6 +20,7 @@ import android.view.View
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
+import androidx.constraintlayout.widget.ConstraintLayout
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
@@ -177,6 +178,7 @@ class MainActivity : AppCompatActivity() {
         binding.topSurfaceView.apply {
             virtualWidth = TOP_WIDTH
             virtualHeight = TOP_HEIGHT
+            holder.setFixedSize(TOP_WIDTH, TOP_HEIGHT)
             touchForwardingEnabled = prefs.isTopTouchForwardingEnabled()
             onTouchInject = { displayId, action, downTime, eventTime, count, ids, xs, ys, pressures ->
                 ioExecutor.execute {
@@ -200,6 +202,7 @@ class MainActivity : AppCompatActivity() {
         binding.bottomSurfaceView.apply {
             virtualWidth = BOTTOM_WIDTH
             virtualHeight = BOTTOM_HEIGHT
+            holder.setFixedSize(BOTTOM_WIDTH, BOTTOM_HEIGHT)
             touchForwardingEnabled = true
             onTouchInject = { displayId, action, downTime, eventTime, count, ids, xs, ys, pressures ->
                 ioExecutor.execute {
@@ -312,14 +315,14 @@ class MainActivity : AppCompatActivity() {
         }
 
         binding.btnToggleLeftStick.setOnClickListener {
-            val next = !prefs.isLeftStickMode()
-            prefs.setLeftStickMode(next)
+            val next = (prefs.getLeftControlMode() + 1) % 3
+            prefs.setLeftControlMode(next)
             applyStickModes()
         }
 
         binding.btnToggleRightStick.setOnClickListener {
-            val next = !prefs.isRightStickMode()
-            prefs.setRightStickMode(next)
+            val next = (prefs.getRightControlMode() + 1) % 3
+            prefs.setRightControlMode(next)
             applyStickModes()
         }
 
@@ -383,13 +386,27 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun applyStickModes() {
-        val leftStick = prefs.isLeftStickMode()
-        binding.virtualDpad.visibility = if (leftStick) View.GONE else View.VISIBLE
-        binding.virtualLeftStick.visibility = if (leftStick) View.VISIBLE else View.GONE
+        val leftMode = prefs.getLeftControlMode()
+        binding.virtualDpad.visibility =
+            if (leftMode == SimulatorPrefs.MODE_PRIMARY || leftMode == SimulatorPrefs.MODE_BOTH) View.VISIBLE else View.GONE
+        binding.virtualLeftStick.visibility =
+            if (leftMode == SimulatorPrefs.MODE_STICK || leftMode == SimulatorPrefs.MODE_BOTH) View.VISIBLE else View.GONE
+        binding.btnToggleLeftStick.text = when (leftMode) {
+            SimulatorPrefs.MODE_STICK -> "L-STK"
+            SimulatorPrefs.MODE_BOTH -> "D+LS"
+            else -> "D-PAD"
+        }
 
-        val rightStick = prefs.isRightStickMode()
-        binding.virtualFaceButtons.visibility = if (rightStick) View.GONE else View.VISIBLE
-        binding.virtualRightStick.visibility = if (rightStick) View.VISIBLE else View.GONE
+        val rightMode = prefs.getRightControlMode()
+        binding.virtualFaceButtons.visibility =
+            if (rightMode == SimulatorPrefs.MODE_PRIMARY || rightMode == SimulatorPrefs.MODE_BOTH) View.VISIBLE else View.GONE
+        binding.virtualRightStick.visibility =
+            if (rightMode == SimulatorPrefs.MODE_STICK || rightMode == SimulatorPrefs.MODE_BOTH) View.VISIBLE else View.GONE
+        binding.btnToggleRightStick.text = when (rightMode) {
+            SimulatorPrefs.MODE_STICK -> "R-STK"
+            SimulatorPrefs.MODE_BOTH -> "ABXY+RS"
+            else -> "ABXY"
+        }
     }
 
     private fun updatePhysicalControllerState() {
@@ -629,29 +646,42 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun syncSurfaceMetadata() {
+        val topParams = binding.topScreenContainer.layoutParams as ConstraintLayout.LayoutParams
+        val bottomParams = binding.bottomScreenContainer.layoutParams as ConstraintLayout.LayoutParams
+
         if (isSwapped) {
             binding.topSurfaceView.apply {
                 targetDisplayId = secondaryDisplayId
                 virtualWidth = BOTTOM_WIDTH
                 virtualHeight = BOTTOM_HEIGHT
+                holder.setFixedSize(BOTTOM_WIDTH, BOTTOM_HEIGHT)
             }
             binding.bottomSurfaceView.apply {
                 targetDisplayId = primaryDisplayId
                 virtualWidth = TOP_WIDTH
                 virtualHeight = TOP_HEIGHT
+                holder.setFixedSize(TOP_WIDTH, TOP_HEIGHT)
             }
+            topParams.dimensionRatio = "1240:1080"
+            bottomParams.dimensionRatio = "16:9"
         } else {
             binding.topSurfaceView.apply {
                 targetDisplayId = primaryDisplayId
                 virtualWidth = TOP_WIDTH
                 virtualHeight = TOP_HEIGHT
+                holder.setFixedSize(TOP_WIDTH, TOP_HEIGHT)
             }
             binding.bottomSurfaceView.apply {
                 targetDisplayId = secondaryDisplayId
                 virtualWidth = BOTTOM_WIDTH
                 virtualHeight = BOTTOM_HEIGHT
+                holder.setFixedSize(BOTTOM_WIDTH, BOTTOM_HEIGHT)
             }
+            topParams.dimensionRatio = "16:9"
+            bottomParams.dimensionRatio = "1240:1080"
         }
+        binding.topScreenContainer.layoutParams = topParams
+        binding.bottomScreenContainer.layoutParams = bottomParams
     }
 
     private fun showLaunchOnBottomPicker() {

@@ -230,23 +230,26 @@
                     android:layout_weight="1" />
             </LinearLayout>
 
-            <FrameLayout
+            <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="0dp"
                 android:layout_marginVertical="4dp"
-                android:layout_weight="1">
+                android:layout_weight="1"
+                android:orientation="vertical">
 
                 <com.aynthor.simulator.input.VirtualDpadView
                     android:id="@+id/virtualDpad"
                     android:layout_width="match_parent"
-                    android:layout_height="match_parent" />
+                    android:layout_height="0dp"
+                    android:layout_weight="1" />
 
                 <com.aynthor.simulator.input.VirtualThumbstickView
                     android:id="@+id/virtualLeftStick"
                     android:layout_width="match_parent"
-                    android:layout_height="match_parent"
+                    android:layout_height="0dp"
+                    android:layout_weight="1"
                     android:visibility="gone" />
-            </FrameLayout>
+            </LinearLayout>
 
             <com.aynthor.simulator.input.VirtualButtonView
                 android:id="@+id/btnSelect"
@@ -346,23 +349,26 @@
                     android:layout_weight="1" />
             </LinearLayout>
 
-            <FrameLayout
+            <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="0dp"
                 android:layout_marginVertical="4dp"
-                android:layout_weight="1">
+                android:layout_weight="1"
+                android:orientation="vertical">
 
                 <com.aynthor.simulator.input.VirtualFaceButtonsView
                     android:id="@+id/virtualFaceButtons"
                     android:layout_width="match_parent"
-                    android:layout_height="match_parent" />
+                    android:layout_height="0dp"
+                    android:layout_weight="1" />
 
                 <com.aynthor.simulator.input.VirtualThumbstickView
                     android:id="@+id/virtualRightStick"
                     android:layout_width="match_parent"
-                    android:layout_height="match_parent"
+                    android:layout_height="0dp"
+                    android:layout_weight="1"
                     android:visibility="gone" />
-            </FrameLayout>
+            </LinearLayout>
 
             <com.aynthor.simulator.input.VirtualButtonView
                 android:id="@+id/btnStart"

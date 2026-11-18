@@ -9,11 +9,15 @@ class SimulatorPrefs(context: Context) {
         context.getSharedPreferences("ayn_thor_prefs", Context.MODE_PRIVATE)
 
     companion object {
+        const val MODE_PRIMARY = 0 // D-Pad or ABXY
+        const val MODE_STICK = 1   // Left Stick or Right Stick
+        const val MODE_BOTH = 2    // Both shown simultaneously
+
         private const val KEY_HIDDEN_PACKAGES = "hidden_packages"
         private const val KEY_SHOW_ALL_APPS = "show_all_apps"
         private const val KEY_TOUCH_CONTROLS = "touch_controls_enabled"
-        private const val KEY_LEFT_STICK_MODE = "left_stick_mode"
-        private const val KEY_RIGHT_STICK_MODE = "right_stick_mode"
+        private const val KEY_LEFT_CONTROL_MODE = "left_control_mode"
+        private const val KEY_RIGHT_CONTROL_MODE = "right_control_mode"
         private const val KEY_TOP_TOUCH_FORWARDING = "top_touch_forwarding"
     }
 
@@ -43,16 +47,16 @@ class SimulatorPrefs(context: Context) {
         prefs.edit().putBoolean(KEY_TOUCH_CONTROLS, enabled).apply()
     }
 
-    fun isLeftStickMode(): Boolean = prefs.getBoolean(KEY_LEFT_STICK_MODE, false)
+    fun getLeftControlMode(): Int = prefs.getInt(KEY_LEFT_CONTROL_MODE, MODE_PRIMARY)
 
-    fun setLeftStickMode(stickMode: Boolean) {
-        prefs.edit().putBoolean(KEY_LEFT_STICK_MODE, stickMode).apply()
+    fun setLeftControlMode(mode: Int) {
+        prefs.edit().putInt(KEY_LEFT_CONTROL_MODE, mode).apply()
     }
 
-    fun isRightStickMode(): Boolean = prefs.getBoolean(KEY_RIGHT_STICK_MODE, false)
+    fun getRightControlMode(): Int = prefs.getInt(KEY_RIGHT_CONTROL_MODE, MODE_PRIMARY)
 
-    fun setRightStickMode(stickMode: Boolean) {
-        prefs.edit().putBoolean(KEY_RIGHT_STICK_MODE, stickMode).apply()
+    fun setRightControlMode(mode: Int) {
+        prefs.edit().putInt(KEY_RIGHT_CONTROL_MODE, mode).apply()
     }
 
     fun isTopTouchForwardingEnabled(): Boolean = prefs.getBoolean(KEY_TOP_TOUCH_FORWARDING, true)
