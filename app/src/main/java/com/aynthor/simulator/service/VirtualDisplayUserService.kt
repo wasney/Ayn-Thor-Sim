@@ -89,7 +89,7 @@ class VirtualDisplayUserService(private val baseContext: Context) : IVirtualDisp
         val dmCtx = try {
             if (Process.myUid() == 2000) {
                 ShellIdentityContext(
-                    baseContext.createPackageContext("com.android.shell", Context.CONTEXT_INCLUDE_CODE)
+                    baseContext.createPackageContext("com.android.shell", Context.CONTEXT_IGNORE_SECURITY)
                 )
             } else {
                 shellContext
@@ -217,7 +217,7 @@ class VirtualDisplayUserService(private val baseContext: Context) : IVirtualDisp
     ): VirtualDisplay? {
         for (flags in flagCandidates) {
             // Try VirtualDisplayConfig (API 33+) first
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
                 try {
                     val config = VirtualDisplayConfig.Builder(name, width, height, dpi)
                         .setFlags(flags)

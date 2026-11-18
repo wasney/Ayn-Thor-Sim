@@ -747,12 +747,10 @@ class MainActivity : AppCompatActivity() {
                 appendLine("Shizuku alive: ${Shizuku.pingBinder()}, Bound: $isServiceBound")
                 appendLine("Primary(1920x1080) ID: $primaryDisplayId, Secondary(1240x1080) ID: $secondaryDisplayId, Swapped: $isSwapped")
                 if (localLogs.isNotEmpty()) {
-                    appendLine("
-=== App Log ===")
+                    appendLine("\n=== App Log ===")
                     localLogs.forEach { appendLine(it) }
                 }
-                appendLine("
-=== UserService Log ===")
+                appendLine("\n=== UserService Log ===")
                 appendLine(serviceLog.ifBlank { "(empty)" })
             }
             runOnUiThread {
