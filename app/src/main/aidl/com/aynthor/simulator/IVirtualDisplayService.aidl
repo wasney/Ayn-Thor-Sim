@@ -15,9 +15,9 @@ interface IVirtualDisplayService {
         int bottomW,
         int bottomH,
         int bottomDpi
-    );
+    ) = 1;
 
-    void swapSurfaces(in Surface topSurface, in Surface bottomSurface);
+    void swapSurfaces(in Surface topSurface, in Surface bottomSurface) = 2;
 
     void injectTouchEvent(
         int displayId,
@@ -29,7 +29,7 @@ interface IVirtualDisplayService {
         in float[] xs,
         in float[] ys,
         in float[] pressures
-    );
+    ) = 3;
 
     void injectKeyEvent(
         int displayId,
@@ -40,7 +40,7 @@ interface IVirtualDisplayService {
         int repeatCount,
         int metaState,
         int source
-    );
+    ) = 4;
 
     void injectJoystickEvent(
         int displayId,
@@ -54,9 +54,9 @@ interface IVirtualDisplayService {
         float axisRTrigger,
         float axisHatX,
         float axisHatY
-    );
+    ) = 5;
 
-    boolean launchAppOnDisplay(String packageName, String activityName, int displayId);
+    boolean launchAppOnDisplay(String packageName, String activityName, int displayId) = 6;
 
-    void releaseDisplays();
+    void releaseDisplays() = 7;
 }
