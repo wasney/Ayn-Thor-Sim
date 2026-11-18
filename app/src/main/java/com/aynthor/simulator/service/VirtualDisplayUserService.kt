@@ -1,11 +1,15 @@
 package com.aynthor.simulator.service
 
 import android.annotation.SuppressLint
+import android.content.AttributionSource
 import android.content.Context
+import android.content.ContextWrapper
 import android.hardware.display.DisplayManager
 import android.hardware.display.VirtualDisplay
+import android.hardware.display.VirtualDisplayConfig
 import android.hardware.input.InputManager
 import android.os.Build
+import android.os.Process
 import android.util.Log
 import android.view.InputDevice
 import android.view.InputEvent
@@ -14,26 +18,91 @@ import android.view.MotionEvent
 import android.view.Surface
 import com.aynthor.simulator.IVirtualDisplayService
 import java.lang.reflect.Method
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+import java.util.concurrent.CopyOnWriteArrayList
 import kotlin.system.exitProcess
 
 @SuppressLint("WrongConstant", "PrivateApi", "DiscouragedPrivateApi")
-class VirtualDisplayUserService(private val context: Context) : IVirtualDisplayService.Stub() {
+class VirtualDisplayUserService(private val baseContext: Context) : IVirtualDisplayService.Stub() {
 
     companion object {
         private const val TAG = "AynThorUserService"
         private const val VIRTUAL_DISPLAY_FLAG_TRUSTED = 1 shl 10 // 1024
         private const val INJECT_INPUT_EVENT_MODE_ASYNC = 0
+        private const val MAX_LOG_LINES = 200
+    }
+
+    private val logLines = CopyOnWriteArrayList<String>()
+    private val timeFormat = SimpleDateFormat("HH:mm:ss.SSS", Locale.US)
+
+    private fun log(msg: String, tr: Throwable? = null) {
+        val ts = timeFormat.format(Date())
+        val line = if (tr != null) {
+            "$ts | $msg -> ${tr.javaClass.simpleName}: ${tr.message}"
+        } else {
+            "$ts | $msg"
+        }
+        Log.i(TAG, line, tr)
+        logLines.add(line)
+        while (logLines.size > MAX_LOG_LINES) {
+            logLines.removeAt(0)
+        }
+    }
+
+    /**
+     * Wraps Context so DisplayManager/InputManager see "com.android.shell" when running as UID 2000.
+     * Prevents SecurityException: packageName must match the owner uid on Android 12-17.
+     */
+    private class ShellIdentityContext(base: Context) : ContextWrapper(base) {
+        private val uid = Process.myUid()
+        private val effectivePkg = if (uid == 2000) "com.android.shell" else base.packageName
+
+        override fun getPackageName(): String = effectivePkg
+
+        override fun getOpPackageName(): String = effectivePkg
+
+        override fun getAttributionSource(): AttributionSource {
+            return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                AttributionSource.Builder(uid)
+                    .setPackageName(effectivePkg)
+                    .build()
+            } else {
+                super.getAttributionSource()
+            }
+        }
+    }
+
+    private val shellContext: Context by lazy {
+        val ctx = ShellIdentityContext(baseContext)
+        log("Initialized ShellIdentityContext: uid=${Process.myUid()}, pkg=${ctx.packageName}, sdk=${Build.VERSION.SDK_INT}")
+        ctx
     }
 
     private var topDisplay: VirtualDisplay? = null
     private var bottomDisplay: VirtualDisplay? = null
 
     private val displayManager: DisplayManager by lazy {
-        context.getSystemService(Context.DISPLAY_SERVICE) as DisplayManager
+        // Prefer creating DisplayManager bound to shellContext via createPackageContext if possible,
+        // otherwise use shellContext.getSystemService
+        val dmCtx = try {
+            if (Process.myUid() == 2000) {
+                ShellIdentityContext(
+                    baseContext.createPackageContext("com.android.shell", Context.CONTEXT_INCLUDE_CODE)
+                )
+            } else {
+                shellContext
+            }
+        } catch (e: Throwable) {
+            log("createPackageContext(com.android.shell) fallback", e)
+            shellContext
+        }
+        dmCtx.getSystemService(Context.DISPLAY_SERVICE) as DisplayManager
     }
 
     private val inputManager: InputManager by lazy {
-        context.getSystemService(Context.INPUT_SERVICE) as InputManager
+        shellContext.getSystemService(Context.INPUT_SERVICE) as InputManager
     }
 
     private val injectInputEventMethod: Method? by lazy {
@@ -44,7 +113,7 @@ class VirtualDisplayUserService(private val context: Context) : IVirtualDisplayS
                 Int::class.javaPrimitiveType
             ).apply { isAccessible = true }
         } catch (e: Throwable) {
-            Log.e(TAG, "Failed to reflect InputManager.injectInputEvent", e)
+            log("Failed to reflect InputManager.injectInputEvent", e)
             null
         }
     }
@@ -91,6 +160,7 @@ class VirtualDisplayUserService(private val context: Context) : IVirtualDisplayS
         bottomDpi: Int
     ): IntArray {
         releaseDisplays()
+        log("createDisplays called: top=${topW}x${topH}, bottom=${bottomW}x${bottomH}")
 
         val trustedFlag = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
             resolveTrustedFlag()
@@ -107,8 +177,11 @@ class VirtualDisplayUserService(private val context: Context) : IVirtualDisplayS
             height = topH,
             dpi = topDpi,
             surface = topSurface,
-            baseFlags = topBaseFlags,
-            trustedFlag = trustedFlag
+            flagCandidates = listOfNotNull(
+                if (trustedFlag != 0) topBaseFlags or trustedFlag else null,
+                topBaseFlags,
+                DisplayManager.VIRTUAL_DISPLAY_FLAG_OWN_CONTENT_ONLY
+            )
         )
 
         val bottomBaseFlags = DisplayManager.VIRTUAL_DISPLAY_FLAG_PUBLIC or
@@ -121,13 +194,16 @@ class VirtualDisplayUserService(private val context: Context) : IVirtualDisplayS
             height = bottomH,
             dpi = bottomDpi,
             surface = bottomSurface,
-            baseFlags = bottomBaseFlags,
-            trustedFlag = trustedFlag
+            flagCandidates = listOfNotNull(
+                if (trustedFlag != 0) bottomBaseFlags or trustedFlag else null,
+                bottomBaseFlags,
+                DisplayManager.VIRTUAL_DISPLAY_FLAG_PRESENTATION or DisplayManager.VIRTUAL_DISPLAY_FLAG_OWN_CONTENT_ONLY
+            )
         )
 
         val topId = topDisplay?.display?.displayId ?: -1
         val bottomId = bottomDisplay?.display?.displayId ?: -1
-        Log.i(TAG, "Created VirtualDisplays: topId=$topId, bottomId=$bottomId")
+        log("createDisplays result: topId=$topId, bottomId=$bottomId")
         return intArrayOf(topId, bottomId)
     }
 
@@ -137,46 +213,54 @@ class VirtualDisplayUserService(private val context: Context) : IVirtualDisplayS
         height: Int,
         dpi: Int,
         surface: Surface,
-        baseFlags: Int,
-        trustedFlag: Int
+        flagCandidates: List<Int>
     ): VirtualDisplay? {
-        if (trustedFlag != 0) {
+        for (flags in flagCandidates) {
+            // Try VirtualDisplayConfig (API 33+) first
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                try {
+                    val config = VirtualDisplayConfig.Builder(name, width, height, dpi)
+                        .setFlags(flags)
+                        .setSurface(surface)
+                        .build()
+                    val vd = displayManager.createVirtualDisplay(config)
+                    if (vd != null) {
+                        log("Created $name via VirtualDisplayConfig flags=0x${Integer.toHexString(flags)} id=${vd.display.displayId}")
+                        return vd
+                    }
+                } catch (e: Throwable) {
+                    log("VirtualDisplayConfig failed for $name flags=0x${Integer.toHexString(flags)}", e)
+                }
+            }
+
+            // Fallback to classic createVirtualDisplay
             try {
-                return displayManager.createVirtualDisplay(
+                val vd = displayManager.createVirtualDisplay(
                     name,
                     width,
                     height,
                     dpi,
                     surface,
-                    baseFlags or trustedFlag
+                    flags
                 )
-            } catch (e: SecurityException) {
-                Log.w(TAG, "VIRTUAL_DISPLAY_FLAG_TRUSTED rejected for $name, falling back", e)
+                if (vd != null) {
+                    log("Created $name via legacy API flags=0x${Integer.toHexString(flags)} id=${vd.display.displayId}")
+                    return vd
+                }
             } catch (e: Throwable) {
-                Log.w(TAG, "createVirtualDisplay with trusted flag failed for $name", e)
+                log("Legacy createVirtualDisplay failed for $name flags=0x${Integer.toHexString(flags)}", e)
             }
         }
-        return try {
-            displayManager.createVirtualDisplay(
-                name,
-                width,
-                height,
-                dpi,
-                surface,
-                baseFlags
-            )
-        } catch (e: Throwable) {
-            Log.e(TAG, "Failed to create VirtualDisplay $name", e)
-            null
-        }
+        return null
     }
 
     override fun swapSurfaces(topSurface: Surface, bottomSurface: Surface) {
         try {
             topDisplay?.surface = topSurface
             bottomDisplay?.surface = bottomSurface
+            log("Swapped virtual display surfaces")
         } catch (e: Throwable) {
-            Log.e(TAG, "Failed to swap surfaces", e)
+            log("Failed to swap surfaces", e)
         }
     }
 
@@ -216,19 +300,19 @@ class VirtualDisplayUserService(private val context: Context) : IVirtualDisplayS
                 pointerCount,
                 properties,
                 coords,
-                0, // metaState
-                0, // buttonState
-                1.0f, // xPrecision
-                1.0f, // yPrecision
-                0, // deviceId
-                0, // edgeFlags
+                0,
+                0,
+                1.0f,
+                1.0f,
+                0,
+                0,
                 InputDevice.SOURCE_TOUCHSCREEN,
-                0 // flags
+                0
             )
             applyDisplayId(event, displayId)
             injectEvent(event)
         } catch (e: Throwable) {
-            Log.e(TAG, "injectTouchEvent error", e)
+            log("injectTouchEvent error", e)
         } finally {
             event?.recycle()
         }
@@ -254,15 +338,15 @@ class VirtualDisplayUserService(private val context: Context) : IVirtualDisplayS
                 keyCode,
                 repeatCount,
                 metaState,
-                -1, // deviceId (virtual)
-                0,  // scanCode
+                -1,
+                0,
                 KeyEvent.FLAG_FROM_SYSTEM,
                 effectiveSource
             )
             applyDisplayId(event, displayId)
             injectEvent(event)
         } catch (e: Throwable) {
-            Log.e(TAG, "injectKeyEvent error", e)
+            log("injectKeyEvent error", e)
         }
     }
 
@@ -319,7 +403,7 @@ class VirtualDisplayUserService(private val context: Context) : IVirtualDisplayS
             applyDisplayId(event, displayId)
             injectEvent(event)
         } catch (e: Throwable) {
-            Log.e(TAG, "injectJoystickEvent error", e)
+            log("injectJoystickEvent error", e)
         } finally {
             event?.recycle()
         }
@@ -333,7 +417,7 @@ class VirtualDisplayUserService(private val context: Context) : IVirtualDisplayS
             }
             setDisplayIdManagerMethod?.invoke(null, event, displayId)
         } catch (e: Throwable) {
-            Log.w(TAG, "Failed to set displayId=$displayId on InputEvent", e)
+            log("Failed to set displayId=$displayId on InputEvent", e)
         }
     }
 
@@ -341,7 +425,7 @@ class VirtualDisplayUserService(private val context: Context) : IVirtualDisplayS
         try {
             injectInputEventMethod?.invoke(inputManager, event, INJECT_INPUT_EVENT_MODE_ASYNC)
         } catch (e: Throwable) {
-            Log.e(TAG, "injectInputEvent invocation failed", e)
+            log("injectInputEvent invocation failed", e)
         }
     }
 
@@ -359,9 +443,10 @@ class VirtualDisplayUserService(private val context: Context) : IVirtualDisplayS
                 "--activity-single-top"
             ).redirectErrorStream(true).start()
             val exitCode = process.waitFor()
+            log("am start --display $displayId -n $component -> exitCode=$exitCode")
             exitCode == 0
         } catch (e: Throwable) {
-            Log.e(TAG, "am start --display failed", e)
+            log("am start --display failed", e)
             false
         }
     }
@@ -380,6 +465,10 @@ class VirtualDisplayUserService(private val context: Context) : IVirtualDisplayS
         } finally {
             bottomDisplay = null
         }
+    }
+
+    override fun getDebugLog(): String {
+        return logLines.joinToString("\n")
     }
 
     override fun destroy() {

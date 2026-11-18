@@ -288,6 +288,16 @@
                 android:textStyle="bold" />
 
             <ImageButton
+                android:id="@+id/btnDebugLog"
+                android:layout_width="34dp"
+                android:layout_height="34dp"
+                android:layout_marginEnd="4dp"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:contentDescription="Debug Log"
+                android:src="@android:drawable/ic_menu_info_details"
+                android:tint="#9CA3AF" />
+
+            <ImageButton
                 android:id="@+id/btnToggleTouch"
                 android:layout_width="34dp"
                 android:layout_height="34dp"

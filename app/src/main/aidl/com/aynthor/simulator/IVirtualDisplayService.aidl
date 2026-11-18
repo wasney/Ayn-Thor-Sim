@@ -59,4 +59,6 @@ interface IVirtualDisplayService {
     boolean launchAppOnDisplay(String packageName, String activityName, int displayId) = 6;
 
     void releaseDisplays() = 7;
+
+    String getDebugLog() = 8;
 }

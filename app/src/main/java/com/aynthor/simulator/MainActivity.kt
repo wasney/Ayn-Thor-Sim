@@ -2,6 +2,8 @@ package com.aynthor.simulator
 
 import android.app.ActivityOptions
 import android.content.ComponentName
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.content.ServiceConnection
@@ -67,6 +69,7 @@ class MainActivity : AppCompatActivity() {
     private var rightStickX = 0f
     private var rightStickY = 0f
     private val keyDownTimes = mutableMapOf<Int, Long>()
+    private val localLogs = mutableListOf<String>()
 
     private val activeTopDisplayId: Int
         get() = if (isSwapped) secondaryDisplayId else primaryDisplayId
@@ -318,6 +321,10 @@ class MainActivity : AppCompatActivity() {
             val next = !prefs.isRightStickMode()
             prefs.setRightStickMode(next)
             applyStickModes()
+        }
+
+        binding.btnDebugLog.setOnClickListener {
+            showDebugLogDialog()
         }
 
         binding.btnExit.setOnClickListener {
@@ -589,7 +596,8 @@ class MainActivity : AppCompatActivity() {
                     secondaryDisplayId = ids[1]
                     syncSurfaceMetadata()
                 } else {
-                    Toast.makeText(this, "Failed to create VirtualDisplays", Toast.LENGTH_LONG).show()
+                    localLogs.add("createDisplays returned invalid IDs: ${ids?.contentToString()}")
+                    showDebugLogDialog()
                 }
             }
         }
@@ -723,6 +731,43 @@ class MainActivity : AppCompatActivity() {
         isServiceBound = false
         primaryDisplayId = -1
         secondaryDisplayId = -1
+    }
+
+
+    private fun showDebugLogDialog() {
+        ioExecutor.execute {
+            val serviceLog = try {
+                userService?.debugLog ?: "(UserService not bound)"
+            } catch (e: Throwable) {
+                "(Failed to read UserService log: ${e.message})"
+            }
+            val fullLog = buildString {
+                appendLine("=== Device & Shizuku ===")
+                appendLine("Model: ${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL} (SDK ${android.os.Build.VERSION.SDK_INT})")
+                appendLine("Shizuku alive: ${Shizuku.pingBinder()}, Bound: $isServiceBound")
+                appendLine("Primary(1920x1080) ID: $primaryDisplayId, Secondary(1240x1080) ID: $secondaryDisplayId, Swapped: $isSwapped")
+                if (localLogs.isNotEmpty()) {
+                    appendLine("
+=== App Log ===")
+                    localLogs.forEach { appendLine(it) }
+                }
+                appendLine("
+=== UserService Log ===")
+                appendLine(serviceLog.ifBlank { "(empty)" })
+            }
+            runOnUiThread {
+                AlertDialog.Builder(this)
+                    .setTitle("Debug Log")
+                    .setMessage(fullLog)
+                    .setPositiveButton("Copy") { _, _ ->
+                        val cm = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                        cm.setPrimaryClip(ClipData.newPlainText("AynThorDebugLog", fullLog))
+                        Toast.makeText(this, "Debug log copied", Toast.LENGTH_SHORT).show()
+                    }
+                    .setNegativeButton("Close", null)
+                    .show()
+            }
+        }
     }
 
     override fun onDestroy() {
