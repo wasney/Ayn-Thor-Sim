@@ -107,7 +107,8 @@ class VirtualDpadView @JvmOverloads constructor(
             }
             MotionEvent.ACTION_UP, MotionEvent.ACTION_POINTER_UP, MotionEvent.ACTION_CANCEL -> {
                 val idx = event.actionIndex
-                if (event.getPointerId(idx) == activePointerId || event.actionMasked == MotionEvent.ACTION_CANCEL) {
+                val isFinalUp = event.actionMasked == MotionEvent.ACTION_UP || event.actionMasked == MotionEvent.ACTION_CANCEL
+                if (isFinalUp || event.getPointerId(idx) == activePointerId) {
                     activePointerId = MotionEvent.INVALID_POINTER_ID
                     setDirections(false, false, false, false)
                 }
@@ -255,7 +256,8 @@ class VirtualThumbstickView @JvmOverloads constructor(
             }
             MotionEvent.ACTION_UP, MotionEvent.ACTION_POINTER_UP, MotionEvent.ACTION_CANCEL -> {
                 val idx = event.actionIndex
-                if (event.getPointerId(idx) == activePointerId || event.actionMasked == MotionEvent.ACTION_CANCEL) {
+                val isFinalUp = event.actionMasked == MotionEvent.ACTION_UP || event.actionMasked == MotionEvent.ACTION_CANCEL
+                if (isFinalUp || event.getPointerId(idx) == activePointerId) {
                     activePointerId = MotionEvent.INVALID_POINTER_ID
                     anchorX = width / 2f
                     anchorY = height / 2f
@@ -415,7 +417,11 @@ class VirtualFaceButtonsView @JvmOverloads constructor(
                 }
                 recomputeActiveKeys()
             }
-            MotionEvent.ACTION_UP, MotionEvent.ACTION_POINTER_UP -> {
+            MotionEvent.ACTION_UP -> {
+                pointerToKey.clear()
+                recomputeActiveKeys()
+            }
+            MotionEvent.ACTION_POINTER_UP -> {
                 val pid = event.getPointerId(event.actionIndex)
                 pointerToKey.remove(pid)
                 recomputeActiveKeys()
@@ -505,7 +511,8 @@ class VirtualButtonView @JvmOverloads constructor(
             }
             MotionEvent.ACTION_UP, MotionEvent.ACTION_POINTER_UP, MotionEvent.ACTION_CANCEL -> {
                 val pid = event.getPointerId(event.actionIndex)
-                if (pid == activePointerId || event.actionMasked == MotionEvent.ACTION_CANCEL) {
+                val isFinalUp = event.actionMasked == MotionEvent.ACTION_UP || event.actionMasked == MotionEvent.ACTION_CANCEL
+                if (isFinalUp || pid == activePointerId) {
                     activePointerId = MotionEvent.INVALID_POINTER_ID
                     setPressedState(false)
                 }
