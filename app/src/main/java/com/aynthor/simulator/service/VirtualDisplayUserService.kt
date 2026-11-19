@@ -375,6 +375,18 @@ class VirtualDisplayUserService(private val baseContext: Context) : IVirtualDisp
         source: Int
     ) {
         if (displayId <= 0) return
+        val isFaceButton = keyCode == KeyEvent.KEYCODE_BUTTON_A ||
+            keyCode == KeyEvent.KEYCODE_BUTTON_B ||
+            keyCode == KeyEvent.KEYCODE_BUTTON_X ||
+            keyCode == KeyEvent.KEYCODE_BUTTON_Y
+        if (isFaceButton && uinputGamepad.isActive) {
+            val isDown = action == KeyEvent.ACTION_DOWN
+            focusDisplay(displayId)
+            if (uinputGamepad.sendKey(keyCode, isDown)) {
+                log("uinputKey(${KeyEvent.keyCodeToString(keyCode)}, down=$isDown, disp=$displayId) -> true")
+                return
+            }
+        }
         try {
             val effectiveSource = if (source != 0) source else (InputDevice.SOURCE_GAMEPAD or InputDevice.SOURCE_DPAD)
             val devId = uinputGamepad.getDeviceId().takeIf { it > 0 } ?: -1
