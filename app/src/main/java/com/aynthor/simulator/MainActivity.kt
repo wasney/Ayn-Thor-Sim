@@ -118,6 +118,7 @@ class MainActivity : AppCompatActivity() {
     @Volatile private var rTrigger = 0f
     @Volatile private var stickDownTime = 0L
     private val keyDownTimes = mutableMapOf<Int, Long>()
+    private val keyRepeatRunnables = mutableMapOf<Int, Runnable>()
     private val localLogs = java.util.concurrent.CopyOnWriteArrayList<String>()
 
     private fun addLocalLog(msg: String) {
@@ -140,7 +141,7 @@ class MainActivity : AppCompatActivity() {
             .daemon(false)
             .processNameSuffix("virtual_display_service")
             .debuggable(false)
-            .version(31)
+            .version(32)
     }
 
     private val serviceConnection = object : ServiceConnection {
@@ -773,7 +774,40 @@ class MainActivity : AppCompatActivity() {
                 0,
                 source
             )
+        }
 
+        val isFaceBtn = keyCode == KeyEvent.KEYCODE_BUTTON_A ||
+            keyCode == KeyEvent.KEYCODE_BUTTON_B ||
+            keyCode == KeyEvent.KEYCODE_BUTTON_X ||
+            keyCode == KeyEvent.KEYCODE_BUTTON_Y
+        if (isFaceBtn) {
+            keyRepeatRunnables.remove(keyCode)?.let { uiHandler.removeCallbacks(it) }
+            if (isDown) {
+                var repCount = 0
+                val repeatTask = object : Runnable {
+                    override fun run() {
+                        if (!keyDownTimes.containsKey(keyCode)) return
+                        repCount++
+                        val tNow = SystemClock.uptimeMillis()
+                        val dTime = keyDownTimes[keyCode] ?: tNow
+                        inputExecutor.execute {
+                            userService?.injectKeyEvent(
+                                targetId,
+                                KeyEvent.ACTION_DOWN,
+                                keyCode,
+                                dTime,
+                                tNow,
+                                repCount,
+                                0,
+                                source
+                            )
+                        }
+                        uiHandler.postDelayed(this, 100L)
+                    }
+                }
+                keyRepeatRunnables[keyCode] = repeatTask
+                uiHandler.postDelayed(repeatTask, 250L)
+            }
         }
     }
 
@@ -1523,6 +1557,8 @@ class MainActivity : AppCompatActivity() {
     override fun onPause() {
         super.onPause()
         // Release any held virtual keys so nothing stays stuck when switching apps
+        keyRepeatRunnables.values.forEach { uiHandler.removeCallbacks(it) }
+        keyRepeatRunnables.clear()
         val heldKeys = keyDownTimes.keys.toList()
         for (kc in heldKeys) {
             handleVirtualKey(kc, false)

@@ -397,27 +397,14 @@ class VirtualDisplayUserService(private val baseContext: Context) : IVirtualDisp
         source: Int
     ) {
         if (displayId <= 0) return
-        val isFaceButton = keyCode == KeyEvent.KEYCODE_BUTTON_A ||
-            keyCode == KeyEvent.KEYCODE_BUTTON_B ||
-            keyCode == KeyEvent.KEYCODE_BUTTON_X ||
-            keyCode == KeyEvent.KEYCODE_BUTTON_Y
-        if (isFaceButton && uinputGamepad.isActive) {
-            val isDown = action == KeyEvent.ACTION_DOWN
-            if (isDown) {
-                val nowMs = System.currentTimeMillis()
-                if (nowMs - lastFocusTimeMs >= 120L) {
-                    lastFocusTimeMs = nowMs
-                    focusDisplay(displayId)
-                }
-            }
-            if (uinputGamepad.sendKey(keyCode, isDown)) {
-                log("uinputKey(${KeyEvent.keyCodeToString(keyCode)}, down=$isDown, disp=$displayId) -> true")
-                return
-            }
-        }
         try {
             val effectiveSource = if (source != 0) source else (InputDevice.SOURCE_GAMEPAD or InputDevice.SOURCE_DPAD)
             val devId = uinputGamepad.getDeviceId().takeIf { it > 0 } ?: -1
+            val isFaceButton = keyCode == KeyEvent.KEYCODE_BUTTON_A ||
+                keyCode == KeyEvent.KEYCODE_BUTTON_B ||
+                keyCode == KeyEvent.KEYCODE_BUTTON_X ||
+                keyCode == KeyEvent.KEYCODE_BUTTON_Y
+            val scanCode = if (isFaceButton) linuxScanCodeForKey(keyCode) else 0
             val event = KeyEvent(
                 downTime,
                 eventTime,
@@ -426,7 +413,7 @@ class VirtualDisplayUserService(private val baseContext: Context) : IVirtualDisp
                 repeatCount,
                 metaState,
                 devId,
-                0,
+                scanCode,
                 0,
                 effectiveSource
             )
