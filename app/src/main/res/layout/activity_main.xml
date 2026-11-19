@@ -418,6 +418,26 @@
             </LinearLayout>
         </ScrollView>
 
+        <!-- Floating Quick-Return Pill when a Dual-Screen App was paused by another top app -->
+        <Button
+            android:id="@+id/btnReturnDualScreen"
+            style="@style/Widget.Material3.Button"
+            android:layout_width="wrap_content"
+            android:layout_height="38dp"
+            android:layout_gravity="bottom|center_horizontal"
+            android:layout_marginBottom="14dp"
+            android:backgroundTint="#2563EB"
+            android:elevation="6dp"
+            android:insetTop="0dp"
+            android:insetBottom="0dp"
+            android:minWidth="0dp"
+            android:paddingHorizontal="16dp"
+            android:text="↩ Return to Dual-Screen App"
+            android:textColor="#FFFFFF"
+            android:textSize="12sp"
+            android:textStyle="bold"
+            android:visibility="gone" />
+
         <!-- Bottom Screen Searchable, Folder-Enabled Icon App Launcher Overlay -->
         <LinearLayout
             android:id="@+id/bottomLauncherOverlay"

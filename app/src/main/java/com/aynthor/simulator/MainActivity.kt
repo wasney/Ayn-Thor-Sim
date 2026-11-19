@@ -75,6 +75,8 @@ class MainActivity : AppCompatActivity() {
     private var activeTopPackage: String? = null
     private var lastBottomPackage: String? = null
     private var hasBottomAppRunning = false
+    private var lastDualScreenApp: AppInfo? = null
+    private var pausedDualScreenApp: AppInfo? = null
 
     private val clientDeathToken = android.os.Binder()
     private val ioExecutor = Executors.newSingleThreadExecutor()
@@ -145,7 +147,7 @@ class MainActivity : AppCompatActivity() {
             .daemon(false)
             .processNameSuffix("virtual_display_service")
             .debuggable(false)
-            .version(39)
+            .version(40)
     }
 
     private val serviceConnection = object : ServiceConnection {
@@ -585,6 +587,20 @@ class MainActivity : AppCompatActivity() {
 
         binding.btnCloseBottom.setOnClickListener {
             handleBottomActionButton()
+        }
+        binding.btnReturnDualScreen.setOnClickListener {
+            val target = pausedDualScreenApp
+            if (target != null) {
+                launchAppOnDisplay(target, primaryDisplayId, hideLauncherAfter = true)
+            } else {
+                binding.btnReturnDualScreen.visibility = View.GONE
+            }
+        }
+        binding.btnReturnDualScreen.setOnLongClickListener {
+            pausedDualScreenApp = null
+            binding.btnReturnDualScreen.visibility = View.GONE
+            Toast.makeText(this, "Dismissed quick-return button", Toast.LENGTH_SHORT).show()
+            true
         }
         updateBottomActionButton()
 
@@ -1242,6 +1258,25 @@ class MainActivity : AppCompatActivity() {
         }
 
         val finalDisplayId = targetDisplayId
+        val previousTopPackage = activeTopPackage
+        if (isLaunchingDualScreen) {
+            lastDualScreenApp = app
+            pausedDualScreenApp = null
+            binding.btnReturnDualScreen.visibility = View.GONE
+        } else if (finalDisplayId == primaryDisplayId &&
+            previousTopPackage != null &&
+            previousTopPackage != app.packageName &&
+            prefs.isDualScreenApp(previousTopPackage)
+        ) {
+            val paused = lastDualScreenApp?.takeIf { it.packageName == previousTopPackage }
+                ?: allApps.firstOrNull { it.packageName == previousTopPackage }
+            if (paused != null) {
+                pausedDualScreenApp = paused
+                binding.btnReturnDualScreen.text = "↩ Return to ${paused.label}"
+                binding.btnReturnDualScreen.visibility = View.VISIBLE
+            }
+        }
+
         if (finalDisplayId == primaryDisplayId) {
             activeTopPackage = app.packageName
         } else if (finalDisplayId == secondaryDisplayId) {
