@@ -79,6 +79,7 @@ class MainActivity : AppCompatActivity() {
     @Volatile private var hatY = 0f
     @Volatile private var lTrigger = 0f
     @Volatile private var rTrigger = 0f
+    @Volatile private var stickDownTime = 0L
     private val keyDownTimes = mutableMapOf<Int, Long>()
     private val localLogs = java.util.concurrent.CopyOnWriteArrayList<String>()
 
@@ -102,7 +103,7 @@ class MainActivity : AppCompatActivity() {
             .daemon(false)
             .processNameSuffix("virtual_display_service")
             .debuggable(false)
-            .version(12)
+            .version(13)
     }
 
     private val serviceConnection = object : ServiceConnection {
@@ -430,13 +431,13 @@ class MainActivity : AppCompatActivity() {
         binding.virtualLeftStick.onStickMove = { x, y ->
             leftStickX = x
             leftStickY = y
-            sendVirtualJoystick()
+            sendVirtualJoystick(force = (x == 0f && y == 0f))
         }
 
         binding.virtualRightStick.onStickMove = { x, y ->
             rightStickX = x
             rightStickY = y
-            sendVirtualJoystick()
+            sendVirtualJoystick(force = (x == 0f && y == 0f))
         }
 
         applyStickModes()
@@ -557,24 +558,32 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun sendVirtualJoystick() {
+    private fun sendVirtualJoystick(force: Boolean = false) {
         val targetId = primaryDisplayId
         if (targetId <= 0) {
             addLocalLog("vStick dropped: primaryDisplayId=$targetId")
             return
         }
-        if (!joystickPending.compareAndSet(false, true)) return
+        val isCentered = leftStickX == 0f && leftStickY == 0f && rightStickX == 0f && rightStickY == 0f && lTrigger == 0f && rTrigger == 0f
+        if (!force && !isCentered && !joystickPending.compareAndSet(false, true)) return
+
+        if (isCentered) {
+            stickDownTime = 0L
+        } else if (stickDownTime == 0L) {
+            stickDownTime = SystemClock.uptimeMillis()
+        }
 
         inputExecutor.execute {
             joystickPending.set(false)
             val now = SystemClock.uptimeMillis()
+            val dTime = if (stickDownTime != 0L) stickDownTime else now
             if (lastBottomTouchTime > 0L) {
                 lastBottomTouchTime = 0L
                 userService?.focusDisplay(targetId)
             }
             userService?.injectJoystickEvent(
                 targetId,
-                now,
+                dTime,
                 now,
                 leftStickX,
                 leftStickY,

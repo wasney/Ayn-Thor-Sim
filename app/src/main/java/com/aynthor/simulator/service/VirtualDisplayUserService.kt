@@ -432,7 +432,7 @@ class VirtualDisplayUserService(private val baseContext: Context) : IVirtualDisp
                 0,
                 1.0f,
                 1.0f,
-                -1,
+                0,
                 0,
                 InputDevice.SOURCE_JOYSTICK,
                 0
