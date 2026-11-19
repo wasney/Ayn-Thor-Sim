@@ -190,7 +190,7 @@ class MainActivity : AppCompatActivity() {
             .daemon(false)
             .processNameSuffix("virtual_display_service")
             .debuggable(false)
-            .version(44)
+            .version(45)
     }
 
     private val serviceConnection = object : ServiceConnection {
@@ -1035,13 +1035,15 @@ class MainActivity : AppCompatActivity() {
             InputDevice.SOURCE_GAMEPAD
         }
 
-        if (keyCode in KeyEvent.KEYCODE_DPAD_UP..KeyEvent.KEYCODE_DPAD_RIGHT ||
+        val useKernel = prefs.isUseKernelGamepad()
+        if (!useKernel && (keyCode in KeyEvent.KEYCODE_DPAD_UP..KeyEvent.KEYCODE_DPAD_RIGHT ||
             keyCode == KeyEvent.KEYCODE_BUTTON_L2 ||
-            keyCode == KeyEvent.KEYCODE_BUTTON_R2
+            keyCode == KeyEvent.KEYCODE_BUTTON_R2)
         ) {
             sendVirtualJoystick()
         }
 
+        val metaFlags = if (useKernel) 0x10000000 else 0
         inputExecutor.execute {
             if (lastBottomTouchTime > 0L) {
                 lastBottomTouchTime = 0L
@@ -1054,7 +1056,7 @@ class MainActivity : AppCompatActivity() {
                 downTime,
                 now,
                 0,
-                0,
+                metaFlags,
                 source
             )
         }
@@ -1063,7 +1065,7 @@ class MainActivity : AppCompatActivity() {
             keyCode == KeyEvent.KEYCODE_BUTTON_B ||
             keyCode == KeyEvent.KEYCODE_BUTTON_X ||
             keyCode == KeyEvent.KEYCODE_BUTTON_Y
-        if (isFaceBtn) {
+        if (isFaceBtn && !useKernel) {
             keyRepeatRunnables.remove(keyCode)?.let { uiHandler.removeCallbacks(it) }
             if (isDown) {
                 var repCount = 0
@@ -2095,8 +2097,13 @@ class MainActivity : AppCompatActivity() {
             text = "Haptic Feedback on Button Press"
             isChecked = prefs.isHapticsEnabled()
         }
+        val cbKernelPad = CheckBox(this).apply {
+            text = "Fast Kernel Gamepad (uinput — avoids 5s Android input stalls)"
+            isChecked = prefs.isUseKernelGamepad()
+        }
         container.addView(cbL3R3)
         container.addView(cbHaptics)
+        container.addView(cbKernelPad)
 
         val curOpacityPct = (prefs.getGamepadOpacity() * 100f).toInt().coerceIn(25, 100)
         val tvOpacity = TextView(this).apply {
@@ -2149,6 +2156,7 @@ class MainActivity : AppCompatActivity() {
                 binding.virtualFaceButtons.isXboxLayout = (chosenLayout == SimulatorPrefs.FACE_LAYOUT_XBOX)
                 prefs.setShowL3R3(cbL3R3.isChecked)
                 prefs.setHapticsEnabled(cbHaptics.isChecked)
+                prefs.setUseKernelGamepad(cbKernelPad.isChecked)
                 prefs.setGamepadOpacity((seekOpacity.progress + 25) / 100f)
                 prefs.setGamepadScale((seekScale.progress + 75) / 100f)
                 applyGamepadAppearance()

@@ -47,6 +47,7 @@ class SimulatorPrefs(context: Context) {
         private const val KEY_GAMEPAD_SCALE = "gamepad_scale"
         private const val KEY_HAPTICS_ENABLED = "haptics_enabled"
         private const val KEY_SHOW_L3_R3 = "show_l3_r3"
+        private const val KEY_USE_KERNEL_GAMEPAD = "use_kernel_gamepad"
         private const val KEY_PROFILE_PACKAGES = "app_profile_packages"
         private const val PREFIX_APP_PROFILE = "app_profile_"
 
@@ -290,6 +291,9 @@ class SimulatorPrefs(context: Context) {
 
     fun isShowL3R3(): Boolean = prefs.getBoolean(KEY_SHOW_L3_R3, true)
     fun setShowL3R3(show: Boolean) = prefs.edit().putBoolean(KEY_SHOW_L3_R3, show).apply()
+
+    fun isUseKernelGamepad(): Boolean = prefs.getBoolean(KEY_USE_KERNEL_GAMEPAD, true)
+    fun setUseKernelGamepad(enabled: Boolean) = prefs.edit().putBoolean(KEY_USE_KERNEL_GAMEPAD, enabled).apply()
 
     // --- Per-App Launch & Layout Profiles ---
     data class AppProfile(

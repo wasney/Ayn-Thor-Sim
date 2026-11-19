@@ -439,6 +439,27 @@ class VirtualDisplayUserService(private val baseContext: Context) : IVirtualDisp
         else -> 0
     }
 
+    private fun ensureFocusedCached(displayId: Int) {
+        val atm = activityTaskManager ?: return
+        try {
+            val focusMethod = atm.javaClass.getMethod("setFocusedRootTask", Int::class.javaPrimitiveType)
+            if (cachedFocusDisplayId == displayId && cachedFocusTaskId > 0) {
+                focusMethod.invoke(atm, cachedFocusTaskId)
+                return
+            }
+            val tasks = getTasksOnDisplay(displayId)
+            val topTask = tasks.firstOrNull()
+            val topTaskId = topTask?.let { extractTaskId(it) } ?: -1
+            if (topTask != null && topTaskId > 0) {
+                cachedFocusDisplayId = displayId
+                cachedFocusTaskId = topTaskId
+                focusMethod.invoke(atm, topTaskId)
+            }
+        } catch (_: Throwable) {
+            invalidateFocusCache()
+        }
+    }
+
     override fun injectKeyEvent(
         displayId: Int,
         action: Int,
@@ -450,13 +471,31 @@ class VirtualDisplayUserService(private val baseContext: Context) : IVirtualDisp
         source: Int
     ) {
         if (displayId <= 0) return
-        // Offload off the serialized oneway Binder thread onto a 4-thread pool so a 5s stall
-        // inside InputManagerService on one call can NEVER freeze subsequent button presses.
+        val useKernelUinput = (metaState and 0x10000000) != 0
+        val cleanMeta = metaState and 0x10000000.inv()
+
+        // Fast Kernel Gamepad path (uinput): 0.02ms kernel write, completely bypasses
+        // Android's InputManager.injectInputEvent 5000ms stalls on Samsung SDK 37!
+        if (useKernelUinput && uinputGamepad.isActive) {
+            val isDown = action == KeyEvent.ACTION_DOWN
+            if (isDown) {
+                val nowMs = System.currentTimeMillis()
+                if (nowMs - lastFocusTimeMs >= 150L) {
+                    lastFocusTimeMs = nowMs
+                    ensureFocusedCached(displayId)
+                }
+            }
+            val ok = uinputGamepad.sendKey(keyCode, isDown)
+            if (ok) {
+                log("uinputKey(${KeyEvent.keyCodeToString(keyCode)}, down=$isDown, disp=$displayId) -> true")
+                return
+            }
+        }
+
+        // Legacy Display-Targeted InputManager injection fallback
         injectExecutor.execute {
             try {
                 val now = android.os.SystemClock.uptimeMillis()
-                // Drop stale ACTION_DOWN events (>400ms old) to eliminate rapid-fire bursts;
-                // always deliver ACTION_UP so buttons can never get stuck.
                 if (action == KeyEvent.ACTION_DOWN && (now - eventTime) > 400L) {
                     log("Dropped stale KEY_DOWN ${KeyEvent.keyCodeToString(keyCode)} (age=${now - eventTime}ms)")
                     return@execute
@@ -474,7 +513,7 @@ class VirtualDisplayUserService(private val baseContext: Context) : IVirtualDisp
                     action,
                     keyCode,
                     repeatCount,
-                    metaState,
+                    cleanMeta,
                     devId,
                     scanCode,
                     0,
