@@ -370,11 +370,9 @@ class VirtualDisplayUserService(private val baseContext: Context) : IVirtualDisp
         source: Int
     ) {
         if (displayId <= 0) return
-        if (uinputGamepad.isActive && uinputGamepad.sendKey(keyCode, action == KeyEvent.ACTION_DOWN)) {
-            return
-        }
         try {
             val effectiveSource = if (source != 0) source else (InputDevice.SOURCE_GAMEPAD or InputDevice.SOURCE_DPAD)
+            val devId = uinputGamepad.getDeviceId().takeIf { it > 0 } ?: -1
             val event = KeyEvent(
                 downTime,
                 eventTime,
@@ -382,7 +380,7 @@ class VirtualDisplayUserService(private val baseContext: Context) : IVirtualDisp
                 keyCode,
                 repeatCount,
                 metaState,
-                -1,
+                devId,
                 0,
                 0,
                 effectiveSource
@@ -419,9 +417,6 @@ class VirtualDisplayUserService(private val baseContext: Context) : IVirtualDisp
         axisHatY: Float
     ) {
         if (displayId <= 0) return
-        if (uinputGamepad.isActive && uinputGamepad.sendAxes(axisX, axisY, axisZ, axisRz)) {
-            return
-        }
         var event: MotionEvent? = null
         try {
             val properties = arrayOf(
@@ -453,7 +448,7 @@ class VirtualDisplayUserService(private val baseContext: Context) : IVirtualDisp
                 0,
                 1.0f,
                 1.0f,
-                0,
+                uinputGamepad.getDeviceId().takeIf { it > 0 } ?: 0,
                 0,
                 InputDevice.SOURCE_JOYSTICK,
                 0

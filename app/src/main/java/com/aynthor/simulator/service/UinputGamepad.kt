@@ -1,5 +1,6 @@
 package com.aynthor.simulator.service
 
+import android.view.InputDevice
 import android.view.KeyEvent
 import java.io.BufferedReader
 import java.io.BufferedWriter
@@ -49,6 +50,7 @@ class UinputGamepad(private val logger: (String) -> Unit) {
     @Volatile var isActive: Boolean = false
         private set
     @Volatile private var hasError: Boolean = false
+    @Volatile private var cachedDeviceId: Int = -1
 
     private var dpadU = false
     private var dpadD = false
@@ -81,6 +83,7 @@ class UinputGamepad(private val logger: (String) -> Unit) {
                             if (line.contains("Error", ignoreCase = true)) {
                                 hasError = true
                                 isActive = false
+        cachedDeviceId = -1
                             }
                         }
                     }
@@ -110,7 +113,8 @@ class UinputGamepad(private val logger: (String) -> Unit) {
             Thread.sleep(300)
             if (proc.isAlive && !hasError) {
                 isActive = true
-                logger("uinput Xbox 360 controller registered ($DEVICE_NAME)")
+                cachedDeviceId = resolveDeviceId()
+                logger("uinput Xbox 360 controller registered ($DEVICE_NAME, deviceId=$cachedDeviceId)")
                 true
             } else {
                 logger("uinput registration failed (alive=${proc.isAlive}, hasError=$hasError); using InputManager fallback")
@@ -207,6 +211,22 @@ class UinputGamepad(private val logger: (String) -> Unit) {
             logger("uinput write failed: ${e.message}")
             stop()
             false
+        }
+    }
+
+    fun getDeviceId(): Int {
+        if (cachedDeviceId > 0) return cachedDeviceId
+        cachedDeviceId = resolveDeviceId()
+        return cachedDeviceId
+    }
+
+    private fun resolveDeviceId(): Int {
+        return try {
+            InputDevice.getDeviceIds().firstOrNull { id ->
+                InputDevice.getDevice(id)?.name == DEVICE_NAME
+            } ?: -1
+        } catch (_: Throwable) {
+            -1
         }
     }
 
