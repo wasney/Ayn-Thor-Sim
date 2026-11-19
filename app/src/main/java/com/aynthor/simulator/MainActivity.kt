@@ -2313,6 +2313,96 @@ class MainActivity : AppCompatActivity() {
             .show()
     }
 
+    private fun handleTopLauncherKey(keyCode: Int, isDown: Boolean): Boolean {
+        if (!isDown) {
+            return keyCode in listOf(
+                KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_DPAD_DOWN,
+                KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_DPAD_RIGHT,
+                KeyEvent.KEYCODE_BUTTON_A, KeyEvent.KEYCODE_BUTTON_B,
+                KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER,
+                KeyEvent.KEYCODE_BUTTON_L1, KeyEvent.KEYCODE_BUTTON_R1
+            )
+        }
+        return when (keyCode) {
+            KeyEvent.KEYCODE_DPAD_LEFT -> { moveTopLauncherSelection(-1); true }
+            KeyEvent.KEYCODE_DPAD_RIGHT -> { moveTopLauncherSelection(1); true }
+            KeyEvent.KEYCODE_DPAD_UP -> { moveTopLauncherSelection(-5); true }
+            KeyEvent.KEYCODE_DPAD_DOWN -> { moveTopLauncherSelection(5); true }
+            KeyEvent.KEYCODE_BUTTON_A, KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER -> {
+                launcherAdapter.getSelectedItem()?.let { app ->
+                    prefs.recordAppLaunch(app.packageName)
+                    launchAppOnDisplay(app, activeTopDisplayId, hideLauncherAfter = true)
+                }
+                true
+            }
+            KeyEvent.KEYCODE_BUTTON_B -> {
+                binding.etTopSearch.clearFocus(); binding.launcherOverlay.visibility = View.GONE
+                true
+            }
+            KeyEvent.KEYCODE_BUTTON_L1 -> { cycleTopFolder(-1); true }
+            KeyEvent.KEYCODE_BUTTON_R1 -> { cycleTopFolder(1); true }
+            else -> false
+        }
+    }
+
+    private fun handleTopLauncherStick(x: Float, y: Float) {
+        val now = SystemClock.uptimeMillis()
+        if (now - lastLauncherStickNavMs < 180L) return
+        val delta = when {
+            x < -0.55f -> -1
+            x > 0.55f -> 1
+            y < -0.55f -> -5
+            y > 0.55f -> 5
+            else -> 0
+        }
+        if (delta != 0) {
+            lastLauncherStickNavMs = now
+            moveTopLauncherSelection(delta)
+        }
+    }
+
+    private fun moveTopLauncherSelection(delta: Int) {
+        val count = launcherAdapter.itemCount
+        if (count <= 0) return
+        val current = if (launcherAdapter.selectedPosition < 0) 0 else launcherAdapter.selectedPosition
+        val next = (current + delta).coerceIn(0, count - 1)
+        launcherAdapter.setSelectedPosition(next)
+        binding.appRecyclerView.smoothScrollToPosition(next)
+    }
+
+    private fun cycleTopFolder(step: Int) {
+        val allFolders = listOf<String?>(null) + prefs.getFolders()
+        if (allFolders.size <= 1) return
+        val idx = allFolders.indexOf(selectedTopFolder).coerceAtLeast(0)
+        val nextIdx = (idx + step + allFolders.size) % allFolders.size
+        selectedTopFolder = allFolders[nextIdx]
+        updateDrawerFilterButtons()
+        refreshLauncherList()
+        if (launcherAdapter.itemCount > 0) launcherAdapter.setSelectedPosition(0)
+    }
+
+    override fun onPause() {
+        super.onPause()
+        // Release any held virtual keys so nothing stays stuck when switching apps
+        keyRepeatRunnables.values.forEach { uiHandler.removeCallbacks(it) }
+        keyRepeatRunnables.clear()
+        val heldKeys = keyDownTimes.keys.toList()
+        for (kc in heldKeys) {
+            handleVirtualKey(kc, false)
+        }
+        if (leftStickX != 0f || leftStickY != 0f || rightStickX != 0f || rightStickY != 0f || lTrigger != 0f || rTrigger != 0f) {
+            leftStickX = 0f
+            leftStickY = 0f
+            rightStickX = 0f
+            rightStickY = 0f
+            lTrigger = 0f
+            rTrigger = 0f
+            hatX = 0f
+            hatY = 0f
+            sendVirtualJoystick()
+        }
+    }
+
     override fun onDestroy() {
         super.onDestroy()
         Shizuku.removeBinderReceivedListener(binderReceivedListener)
