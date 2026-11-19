@@ -87,7 +87,9 @@ class VirtualDisplayUserService(private val baseContext: Context) : IVirtualDisp
     private var lastUinputLy = 0f
     private var lastUinputRx = 0f
     private var lastUinputRy = 0f
-    private var lastFocusForStickTime = 0L
+    private var cachedFocusDisplayId = -1
+    private var cachedFocusTaskId = -1
+    private var lastFocusTimeMs = 0L
     private var lastStickLogTime = 0L
     private var bottomDisplay: VirtualDisplay? = null
 
@@ -276,16 +278,32 @@ class VirtualDisplayUserService(private val baseContext: Context) : IVirtualDisp
         }
     }
 
+    private fun invalidateFocusCache() {
+        cachedFocusDisplayId = -1
+        cachedFocusTaskId = -1
+    }
+
     override fun focusDisplay(displayId: Int) {
         val atm = activityTaskManager ?: return
         try {
+            val focusMethod = atm.javaClass.getMethod("setFocusedRootTask", Int::class.javaPrimitiveType)
+            if (cachedFocusDisplayId == displayId && cachedFocusTaskId > 0) {
+                try {
+                    focusMethod.invoke(atm, cachedFocusTaskId)
+                    return
+                } catch (_: Throwable) {
+                    invalidateFocusCache()
+                }
+            }
             val tasks = getTasksOnDisplay(displayId)
             val topTaskId = tasks.firstOrNull()?.let { extractTaskId(it) } ?: -1
             if (topTaskId > 0) {
-                val focusMethod = atm.javaClass.getMethod("setFocusedRootTask", Int::class.javaPrimitiveType)
+                cachedFocusDisplayId = displayId
+                cachedFocusTaskId = topTaskId
                 focusMethod.invoke(atm, topTaskId)
             }
         } catch (e: Throwable) {
+            invalidateFocusCache()
             log("focusDisplay($displayId) failed", e)
         }
     }
@@ -381,7 +399,13 @@ class VirtualDisplayUserService(private val baseContext: Context) : IVirtualDisp
             keyCode == KeyEvent.KEYCODE_BUTTON_Y
         if (isFaceButton && uinputGamepad.isActive) {
             val isDown = action == KeyEvent.ACTION_DOWN
-            focusDisplay(displayId)
+            if (isDown) {
+                val nowMs = System.currentTimeMillis()
+                if (nowMs - lastFocusTimeMs >= 120L) {
+                    lastFocusTimeMs = nowMs
+                    focusDisplay(displayId)
+                }
+            }
             if (uinputGamepad.sendKey(keyCode, isDown)) {
                 log("uinputKey(${KeyEvent.keyCodeToString(keyCode)}, down=$isDown, disp=$displayId) -> true")
                 return
@@ -442,11 +466,14 @@ class VirtualDisplayUserService(private val baseContext: Context) : IVirtualDisp
             lastUinputLy = axisY
             lastUinputRx = axisZ
             lastUinputRy = axisRz
+            val isZero = axisX == 0f && axisY == 0f && axisZ == 0f && axisRz == 0f
             if (uinputGamepad.isActive) {
-                val nowMs = System.currentTimeMillis()
-                if (wasZero || nowMs - lastFocusForStickTime >= 250L) {
-                    lastFocusForStickTime = nowMs
-                    focusDisplay(displayId)
+                if (wasZero && !isZero) {
+                    val nowMs = System.currentTimeMillis()
+                    if (nowMs - lastFocusTimeMs >= 120L) {
+                        lastFocusTimeMs = nowMs
+                        focusDisplay(displayId)
+                    }
                 }
                 if (uinputGamepad.sendAxes(axisX, axisY, axisZ, axisRz)) {
                     return
@@ -541,6 +568,7 @@ class VirtualDisplayUserService(private val baseContext: Context) : IVirtualDisp
                 "--activity-single-top"
             ).redirectErrorStream(true).start()
             val exitCode = process.waitFor()
+            invalidateFocusCache()
             log("am start --display $displayId -n $component -> exitCode=$exitCode")
             exitCode == 0
         } catch (e: Throwable) {
@@ -550,6 +578,7 @@ class VirtualDisplayUserService(private val baseContext: Context) : IVirtualDisp
     }
 
     override fun releaseDisplays() {
+        invalidateFocusCache()
         lastUinputLx = 0f
         lastUinputLy = 0f
         lastUinputRx = 0f
@@ -624,6 +653,7 @@ class VirtualDisplayUserService(private val baseContext: Context) : IVirtualDisp
 
             val topTaskId = topTasks.firstOrNull()?.let { extractTaskId(it) } ?: -1
             val bottomTaskId = bottomTasks.firstOrNull()?.let { extractTaskId(it) } ?: -1
+            invalidateFocusCache()
             log("swapTasksBetweenDisplays: topTask=$topTaskId -> $bottomDisplayId, bottomTask=$bottomTaskId -> $topDisplayId")
 
             if (topTaskId > 0) {

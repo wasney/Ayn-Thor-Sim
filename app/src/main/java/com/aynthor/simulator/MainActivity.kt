@@ -105,7 +105,7 @@ class MainActivity : AppCompatActivity() {
             .daemon(false)
             .processNameSuffix("virtual_display_service")
             .debuggable(false)
-            .version(27)
+            .version(28)
     }
 
     private val serviceConnection = object : ServiceConnection {
