@@ -74,6 +74,7 @@ class MainActivity : AppCompatActivity() {
 
     private val clientDeathToken = android.os.Binder()
     private val ioExecutor = Executors.newSingleThreadExecutor()
+    private val perfExecutor = Executors.newSingleThreadExecutor()
     private val inputExecutor = Executors.newSingleThreadExecutor()
     private val joystickRunning = AtomicBoolean(false)
     private val joystickDirty = AtomicBoolean(false)
@@ -103,7 +104,7 @@ class MainActivity : AppCompatActivity() {
     private val homeRefreshRunnable = object : Runnable {
         override fun run() {
             updateBottomHomeDashboard()
-            uiHandler.postDelayed(this, 1500L)
+            uiHandler.postDelayed(this, 3000L)
         }
     }
 
@@ -139,7 +140,7 @@ class MainActivity : AppCompatActivity() {
             .daemon(false)
             .processNameSuffix("virtual_display_service")
             .debuggable(false)
-            .version(29)
+            .version(30)
     }
 
     private val serviceConnection = object : ServiceConnection {
@@ -989,7 +990,7 @@ class MainActivity : AppCompatActivity() {
             val ok = service.swapTasksBetweenDisplays(primaryDisplayId, secondaryDisplayId)
             runOnUiThread {
                 if (ok) {
-                    binding.launcherOverlay.visibility = View.GONE
+                    binding.etTopSearch.clearFocus(); binding.launcherOverlay.visibility = View.GONE
                     binding.bottomLauncherOverlay.visibility = View.GONE
                     binding.bottomHomeOverlay.visibility = View.GONE
                     Toast.makeText(this, "Swapped top & bottom apps", Toast.LENGTH_SHORT).show()
@@ -1100,7 +1101,7 @@ class MainActivity : AppCompatActivity() {
                 val ok = userService?.launchAppOnDisplay(app.packageName, app.activityName, displayId) == true
                 runOnUiThread {
                     if (ok && hideLauncherAfter) {
-                        binding.launcherOverlay.visibility = View.GONE
+                        binding.etTopSearch.clearFocus(); binding.launcherOverlay.visibility = View.GONE
                     } else if (!ok) {
                         Toast.makeText(this, "Failed to launch ${app.label}", Toast.LENGTH_SHORT).show()
                     }
@@ -1109,7 +1110,7 @@ class MainActivity : AppCompatActivity() {
         } else if (hideLauncherAfter) {
             addLocalLog("Launched ${app.packageName} on display $displayId")
             binding.root.postDelayed({ ioExecutor.execute { userService?.focusDisplay(displayId) } }, 450L)
-            binding.launcherOverlay.visibility = View.GONE
+            binding.etTopSearch.clearFocus(); binding.launcherOverlay.visibility = View.GONE
         }
     }
 
@@ -1227,7 +1228,7 @@ class MainActivity : AppCompatActivity() {
             val svc = userService
             val topDisp = primaryDisplayId
             if (svc != null) {
-                ioExecutor.execute {
+                perfExecutor.execute {
                     val raw = try {
                         svc.getPerformanceStats(topDisp)
                     } catch (_: Throwable) {
@@ -1468,7 +1469,7 @@ class MainActivity : AppCompatActivity() {
                 true
             }
             KeyEvent.KEYCODE_BUTTON_B -> {
-                binding.launcherOverlay.visibility = View.GONE
+                binding.etTopSearch.clearFocus(); binding.launcherOverlay.visibility = View.GONE
                 true
             }
             KeyEvent.KEYCODE_BUTTON_L1 -> { cycleTopFolder(-1); true }
@@ -1541,6 +1542,7 @@ class MainActivity : AppCompatActivity() {
         inputManager.unregisterInputDeviceListener(inputDeviceListener)
         teardownShizukuDisplays()
         uiHandler.removeCallbacks(homeRefreshRunnable)
+        perfExecutor.shutdownNow()
         ioExecutor.shutdownNow()
         inputExecutor.shutdownNow()
     }

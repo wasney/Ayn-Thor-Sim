@@ -89,6 +89,8 @@ class VirtualDisplayUserService(private val baseContext: Context) : IVirtualDisp
     private var lastUinputRy = 0f
     private var cachedFocusDisplayId = -1
     private var cachedFocusTaskId = -1
+    private var cachedTopPackage: String? = null
+    private var cachedSfLayer: String? = null
     private var lastFocusTimeMs = 0L
     private var lastStickLogTime = 0L
     private var bottomDisplay: VirtualDisplay? = null
@@ -285,6 +287,8 @@ class VirtualDisplayUserService(private val baseContext: Context) : IVirtualDisp
     private fun invalidateFocusCache() {
         cachedFocusDisplayId = -1
         cachedFocusTaskId = -1
+        cachedTopPackage = null
+        cachedSfLayer = null
     }
 
     override fun focusDisplay(displayId: Int) {
@@ -783,45 +787,73 @@ class VirtualDisplayUserService(private val baseContext: Context) : IVirtualDisp
 
         var fpsStr = "--"
         try {
-            val targetTask = if (displayId > 0) getTasksOnDisplay(displayId).firstOrNull() else null
-            val topActivity = targetTask?.let {
-                try {
-                    val f = it.javaClass.getField("topActivity").get(it)
-                    f?.toString()
-                } catch (_: Throwable) { null }
+            var layer = cachedSfLayer
+            if (layer.isNullOrBlank() && displayId > 0) {
+                var pkg = cachedTopPackage
+                if (pkg.isNullOrBlank()) {
+                    val targetTask = getTasksOnDisplay(displayId).firstOrNull()
+                    val topActivity = targetTask?.let {
+                        try { it.javaClass.getField("topActivity").get(it)?.toString() } catch (_: Throwable) { null }
+                    }
+                    pkg = topActivity?.substringAfter("{")?.substringBefore("/")
+                    if (!pkg.isNullOrBlank()) cachedTopPackage = pkg
+                }
+                if (!pkg.isNullOrBlank()) {
+                    val listProc = ProcessBuilder("dumpsys", "SurfaceFlinger", "--list")
+                        .redirectErrorStream(true).start()
+                    val listOut = listProc.inputStream.bufferedReader().readText()
+                    listProc.waitFor(200, java.util.concurrent.TimeUnit.MILLISECONDS)
+                    listProc.destroy()
+                    val matchingLayers = listOut.lineSequence()
+                        .map { it.trim() }
+                        .filter { it.contains(pkg) }
+                        .toList()
+                    // Prefer SurfaceView layer for OpenGL/Vulkan games, fallback to main Activity layer
+                    layer = matchingLayers.firstOrNull { it.startsWith("SurfaceView[") && !it.contains("Background") }
+                        ?: matchingLayers.firstOrNull { it.contains("SurfaceView") && !it.contains("Background") }
+                        ?: matchingLayers.firstOrNull()
+                    cachedSfLayer = layer
+                }
             }
-            val pkg = topActivity?.substringAfter("{")?.substringBefore("/")
-            if (!pkg.isNullOrBlank()) {
-                val proc = ProcessBuilder("dumpsys", "gfxinfo", pkg, "framestats")
+            if (!layer.isNullOrBlank()) {
+                val latProc = ProcessBuilder("dumpsys", "SurfaceFlinger", "--latency", layer)
                     .redirectErrorStream(true).start()
-                val out = proc.inputStream.bufferedReader().readText()
-                proc.waitFor(250, java.util.concurrent.TimeUnit.MILLISECONDS)
-                proc.destroy()
-                val timestamps = mutableListOf<Long>()
-                var inData = false
-                for (line in out.lineSequence()) {
-                    if (line.startsWith("---PROFILEDATA---")) {
-                        inData = !inData
+                val latOut = latProc.inputStream.bufferedReader().readText()
+                latProc.waitFor(200, java.util.concurrent.TimeUnit.MILLISECONDS)
+                latProc.destroy()
+                val presentTimes = mutableListOf<Long>()
+                var isFirst = true
+                for (line in latOut.lineSequence()) {
+                    if (isFirst) {
+                        isFirst = false
                         continue
                     }
-                    if (inData && line.isNotBlank() && line[0].isDigit()) {
-                        val cols = line.split(",")
-                        if (cols.size > 2) {
-                            val vsync = cols[1].trim().toLongOrNull()
-                            if (vsync != null && vsync > 0L) timestamps.add(vsync)
+                    val cols = line.trim().split(Regex("\\s+"))
+                    if (cols.size >= 3) {
+                        val t = cols[1].toLongOrNull() ?: continue
+                        if (t > 0L && t != Long.MAX_VALUE) {
+                            presentTimes.add(t)
                         }
                     }
                 }
-                if (timestamps.size >= 5) {
-                    val recent = timestamps.takeLast(30)
-                    val spanNs = recent.last() - recent.first()
-                    if (spanNs > 0L) {
-                        val fps = ((recent.size - 1) * 1_000_000_000.0 / spanNs).coerceIn(1.0, 144.0)
-                        fpsStr = String.format(Locale.US, "%.0f FPS", fps)
+                if (presentTimes.size >= 3) {
+                    val lastT = presentTimes.last()
+                    val cutoff = lastT - 1_500_000_000L // 1.5s window
+                    val recent = presentTimes.filter { it >= cutoff }
+                    if (recent.size >= 3) {
+                        val spanNs = recent.last() - recent.first()
+                        if (spanNs > 50_000_000L) {
+                            val fps = ((recent.size - 1) * 1_000_000_000.0 / spanNs).coerceIn(1.0, 144.0)
+                            fpsStr = String.format(Locale.US, "%.0f FPS", fps)
+                        }
                     }
+                } else {
+                    cachedSfLayer = null
                 }
             }
-        } catch (_: Throwable) {}
+        } catch (_: Throwable) {
+            cachedSfLayer = null
+        }
 
         return "$cpuStr|$tempStr|$gpuFreqStr|$gpuLoadStr|$fpsStr"
     }
