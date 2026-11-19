@@ -227,6 +227,11 @@ class UinputGamepad(private val logger: (String) -> Unit) {
         }
     }
 
+    fun getDescriptor(): String? {
+        val id = getDeviceId()
+        return if (id > 0) InputDevice.getDevice(id)?.descriptor else null
+    }
+
     fun getDeviceId(): Int {
         if (cachedDeviceId > 0) return cachedDeviceId
         cachedDeviceId = resolveDeviceId()
