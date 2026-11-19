@@ -21,6 +21,7 @@ import com.aynthor.simulator.IVirtualDisplayService
 import java.lang.reflect.Method
 import java.text.SimpleDateFormat
 import java.util.Date
+import java.util.concurrent.Executors
 import java.util.Locale
 import java.util.concurrent.CopyOnWriteArrayList
 import kotlin.system.exitProcess
@@ -88,8 +89,9 @@ class VirtualDisplayUserService(private val baseContext: Context) : IVirtualDisp
     private var lastUinputLy = 0f
     private var lastUinputRx = 0f
     private var lastUinputRy = 0f
-    private var cachedFocusDisplayId = -1
-    private var cachedFocusTaskId = -1
+    @Volatile private var cachedFocusDisplayId = -1
+    @Volatile private var cachedFocusTaskId = -1
+    private val focusExecutor = Executors.newSingleThreadExecutor()
     private var lastFocusTimeMs = 0L
     private var lastStickLogTime = 0L
     private var bottomDisplay: VirtualDisplay? = null
@@ -303,30 +305,52 @@ class VirtualDisplayUserService(private val baseContext: Context) : IVirtualDisp
     }
 
     override fun focusDisplay(displayId: Int) {
-        val atm = activityTaskManager ?: return
-        try {
-            val focusMethod = atm.javaClass.getMethod("setFocusedRootTask", Int::class.javaPrimitiveType)
-            // Always query the live frontmost task on this display so launching a new app
-            // over an existing one (e.g. over SeedlessDS) never yanks the previous app back to front.
-            val tasks = getTasksOnDisplay(displayId)
-            val topTask = tasks.firstOrNull()
-            val topTaskId = topTask?.let { extractTaskId(it) } ?: -1
-            if (topTask != null && topTaskId > 0) {
-                if (cachedFocusDisplayId != displayId || cachedFocusTaskId != topTaskId) {
-                    val pkg = extractPackageName(topTask)
-                    log("focusDisplay($displayId) -> task=$topTaskId ($pkg)")
-                    cachedFocusDisplayId = displayId
-                    cachedFocusTaskId = topTaskId
+        if (displayId == 0) return
+        val forceRefresh = displayId < 0
+        val realDisplayId = kotlin.math.abs(displayId)
+        if (forceRefresh) invalidateFocusCache()
+
+        // Offload focusDisplay off the serialized oneway Binder thread so ATM/WM locks
+        // can NEVER stall injectKeyEvent or injectTouchEvent in the Binder queue.
+        focusExecutor.execute {
+            val t0 = android.os.SystemClock.uptimeMillis()
+            val atm = activityTaskManager
+            if (atm != null) {
+                try {
+                    val focusMethod = atm.javaClass.getMethod("setFocusedRootTask", Int::class.javaPrimitiveType)
+                    if (!forceRefresh && cachedFocusDisplayId == realDisplayId && cachedFocusTaskId > 0) {
+                        try {
+                            focusMethod.invoke(atm, cachedFocusTaskId)
+                        } catch (_: Throwable) {
+                            invalidateFocusCache()
+                        }
+                    } else {
+                        val tasks = getTasksOnDisplay(realDisplayId)
+                        val topTask = tasks.firstOrNull()
+                        val topTaskId = topTask?.let { extractTaskId(it) } ?: -1
+                        if (topTask != null && topTaskId > 0) {
+                            if (cachedFocusDisplayId != realDisplayId || cachedFocusTaskId != topTaskId) {
+                                val pkg = extractPackageName(topTask)
+                                log("focusDisplay($realDisplayId) -> task=$topTaskId ($pkg)")
+                                cachedFocusDisplayId = realDisplayId
+                                cachedFocusTaskId = topTaskId
+                            }
+                            focusMethod.invoke(atm, topTaskId)
+                        } else {
+                            invalidateFocusCache()
+                        }
+                    }
+                } catch (e: Throwable) {
+                    invalidateFocusCache()
+                    log("focusDisplay($realDisplayId) failed", e)
                 }
-                focusMethod.invoke(atm, topTaskId)
-            } else {
-                invalidateFocusCache()
             }
-        } catch (e: Throwable) {
-            invalidateFocusCache()
-            log("focusDisplay($displayId) failed", e)
+            pokeDisplayFocus(realDisplayId)
+            val dt = android.os.SystemClock.uptimeMillis() - t0
+            if (dt > 150L) {
+                log("SLOW focusDisplay($realDisplayId, refresh=$forceRefresh) took ${dt}ms")
+            }
         }
-        pokeDisplayFocus(displayId)
     }
 
     private fun pokeDisplayFocus(displayId: Int) {
@@ -560,9 +584,14 @@ class VirtualDisplayUserService(private val baseContext: Context) : IVirtualDisp
     @Synchronized
     private fun injectEvent(event: InputEvent, displayId: Int): Boolean? {
         return try {
+            val t0 = android.os.SystemClock.uptimeMillis()
             val ok = injectInputEventMethod?.invoke(inputManager, event, INJECT_INPUT_EVENT_MODE_ASYNC) as? Boolean
+            val dt = android.os.SystemClock.uptimeMillis() - t0
             if (event is KeyEvent) {
-                log("injectKey(${KeyEvent.keyCodeToString(event.keyCode)}, act=${event.action}, disp=$displayId) -> $ok")
+                val slowTag = if (dt > 150L) " [SLOW ${dt}ms]" else ""
+                log("injectKey(${KeyEvent.keyCodeToString(event.keyCode)}, act=${event.action}, disp=$displayId) -> $ok$slowTag")
+            } else if (dt > 150L) {
+                log("SLOW injectMotion(src=0x${Integer.toHexString(event.source)}, disp=$displayId) -> $ok [${dt}ms]")
             } else if (ok == false && (event.source and InputDevice.SOURCE_JOYSTICK) != InputDevice.SOURCE_JOYSTICK) {
                 log("injectMotion(src=0x${Integer.toHexString(event.source)}, disp=$displayId) -> false")
             }

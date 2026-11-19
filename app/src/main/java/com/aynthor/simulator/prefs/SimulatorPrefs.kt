@@ -2,6 +2,8 @@ package com.aynthor.simulator.prefs
 
 import android.content.Context
 import android.content.SharedPreferences
+import org.json.JSONArray
+import org.json.JSONObject
 
 class SimulatorPrefs(context: Context) {
 
@@ -35,6 +37,22 @@ class SimulatorPrefs(context: Context) {
         private const val KEY_BOTTOM_ASPECT_RATIO = "bottom_aspect_ratio"
         private const val KEY_SHOW_RECENT_ROW = "show_recent_row"
         private const val KEY_ORIENTATION_MODE = "orientation_mode"
+        private const val KEY_SHOW_CONTROL_CENTER = "show_control_center"
+        private const val KEY_CC_BRIGHTNESS = "cc_show_brightness"
+        private const val KEY_CC_VOLUME = "cc_show_volume"
+        private const val KEY_CC_WIFI = "cc_show_wifi"
+        private const val KEY_CC_BLUETOOTH = "cc_show_bluetooth"
+        private const val KEY_CC_SLEEP_BOTTOM = "cc_show_sleep_bottom"
+        private const val KEY_GAMEPAD_OPACITY = "gamepad_opacity"
+        private const val KEY_GAMEPAD_SCALE = "gamepad_scale"
+        private const val KEY_HAPTICS_ENABLED = "haptics_enabled"
+        private const val KEY_SHOW_L3_R3 = "show_l3_r3"
+        private const val KEY_PROFILE_PACKAGES = "app_profile_packages"
+        private const val PREFIX_APP_PROFILE = "app_profile_"
+
+        const val PROFILE_TOUCH_DEFAULT = 0
+        const val PROFILE_TOUCH_FORCE_SHOW = 1
+        const val PROFILE_TOUCH_FORCE_HIDE = 2
         private const val KEY_SHOW_ALL_APPS = "show_all_apps"
         private const val KEY_TOUCH_CONTROLS = "touch_controls_enabled"
         private const val KEY_LEFT_CONTROL_MODE = "left_control_mode"
@@ -239,5 +257,210 @@ class SimulatorPrefs(context: Context) {
 
     fun setOrientationMode(mode: Int) {
         prefs.edit().putInt(KEY_ORIENTATION_MODE, mode).apply()
+    }
+
+    // --- Quick Control Center toggles ---
+    fun isShowControlCenter(): Boolean = prefs.getBoolean(KEY_SHOW_CONTROL_CENTER, true)
+    fun setShowControlCenter(show: Boolean) = prefs.edit().putBoolean(KEY_SHOW_CONTROL_CENTER, show).apply()
+
+    fun isShowCcBrightness(): Boolean = prefs.getBoolean(KEY_CC_BRIGHTNESS, true)
+    fun setShowCcBrightness(show: Boolean) = prefs.edit().putBoolean(KEY_CC_BRIGHTNESS, show).apply()
+
+    fun isShowCcVolume(): Boolean = prefs.getBoolean(KEY_CC_VOLUME, true)
+    fun setShowCcVolume(show: Boolean) = prefs.edit().putBoolean(KEY_CC_VOLUME, show).apply()
+
+    fun isShowCcWifi(): Boolean = prefs.getBoolean(KEY_CC_WIFI, true)
+    fun setShowCcWifi(show: Boolean) = prefs.edit().putBoolean(KEY_CC_WIFI, show).apply()
+
+    fun isShowCcBluetooth(): Boolean = prefs.getBoolean(KEY_CC_BLUETOOTH, true)
+    fun setShowCcBluetooth(show: Boolean) = prefs.edit().putBoolean(KEY_CC_BLUETOOTH, show).apply()
+
+    fun isShowCcSleepBottom(): Boolean = prefs.getBoolean(KEY_CC_SLEEP_BOTTOM, true)
+    fun setShowCcSleepBottom(show: Boolean) = prefs.edit().putBoolean(KEY_CC_SLEEP_BOTTOM, show).apply()
+
+    // --- Virtual Gamepad customization ---
+    fun getGamepadOpacity(): Float = prefs.getFloat(KEY_GAMEPAD_OPACITY, 1.0f).coerceIn(0.25f, 1.0f)
+    fun setGamepadOpacity(opacity: Float) = prefs.edit().putFloat(KEY_GAMEPAD_OPACITY, opacity.coerceIn(0.25f, 1.0f)).apply()
+
+    fun getGamepadScale(): Float = prefs.getFloat(KEY_GAMEPAD_SCALE, 1.0f).coerceIn(0.75f, 1.25f)
+    fun setGamepadScale(scale: Float) = prefs.edit().putFloat(KEY_GAMEPAD_SCALE, scale.coerceIn(0.75f, 1.25f)).apply()
+
+    fun isHapticsEnabled(): Boolean = prefs.getBoolean(KEY_HAPTICS_ENABLED, false)
+    fun setHapticsEnabled(enabled: Boolean) = prefs.edit().putBoolean(KEY_HAPTICS_ENABLED, enabled).apply()
+
+    fun isShowL3R3(): Boolean = prefs.getBoolean(KEY_SHOW_L3_R3, true)
+    fun setShowL3R3(show: Boolean) = prefs.edit().putBoolean(KEY_SHOW_L3_R3, show).apply()
+
+    // --- Per-App Launch & Layout Profiles ---
+    data class AppProfile(
+        val splitPercent: Float? = null,
+        val orientationMode: Int? = null,
+        val touchOverride: Int = PROFILE_TOUCH_DEFAULT,
+        val pairedBottomPackage: String? = null
+    )
+
+    fun getAppProfile(packageName: String): AppProfile? {
+        val raw = prefs.getString(PREFIX_APP_PROFILE + packageName, null) ?: return null
+        return try {
+            val obj = JSONObject(raw)
+            AppProfile(
+                splitPercent = if (obj.has("split") && !obj.isNull("split")) obj.getDouble("split").toFloat() else null,
+                orientationMode = if (obj.has("orient") && !obj.isNull("orient")) obj.getInt("orient") else null,
+                touchOverride = obj.optInt("touch", PROFILE_TOUCH_DEFAULT),
+                pairedBottomPackage = obj.optString("paired", "").takeIf { it.isNotBlank() }
+            )
+        } catch (_: Throwable) {
+            null
+        }
+    }
+
+    fun setAppProfile(packageName: String, profile: AppProfile?) {
+        val pkgs = (prefs.getStringSet(KEY_PROFILE_PACKAGES, emptySet()) ?: emptySet()).toMutableSet()
+        val editor = prefs.edit()
+        if (profile == null || (profile.splitPercent == null && profile.orientationMode == null &&
+                profile.touchOverride == PROFILE_TOUCH_DEFAULT && profile.pairedBottomPackage.isNullOrBlank())
+        ) {
+            pkgs.remove(packageName)
+            editor.remove(PREFIX_APP_PROFILE + packageName)
+        } else {
+            val obj = JSONObject().apply {
+                if (profile.splitPercent != null) put("split", profile.splitPercent.toDouble())
+                if (profile.orientationMode != null) put("orient", profile.orientationMode)
+                put("touch", profile.touchOverride)
+                if (!profile.pairedBottomPackage.isNullOrBlank()) put("paired", profile.pairedBottomPackage)
+            }
+            pkgs.add(packageName)
+            editor.putString(PREFIX_APP_PROFILE + packageName, obj.toString())
+        }
+        editor.putStringSet(KEY_PROFILE_PACKAGES, pkgs).apply()
+    }
+
+    // --- Settings Backup (Export / Import JSON) ---
+    fun exportToJson(): String {
+        val root = JSONObject()
+        root.put("format", "DroiDS-Backup-v1")
+        root.put("faceLayout", getFaceButtonLayout())
+        root.put("themeMode", getThemeMode())
+        root.put("orientationMode", getOrientationMode())
+        root.put("splitPercent", getSplitPercent().toDouble())
+        root.put("topAspectRatio", getTopAspectRatio())
+        root.put("bottomAspectRatio", getBottomAspectRatio())
+        root.put("touchControls", isTouchControlsEnabled())
+        root.put("leftControlMode", getLeftControlMode())
+        root.put("rightControlMode", getRightControlMode())
+        root.put("topTouchForwarding", isTopTouchForwardingEnabled())
+        root.put("topSortMode", getTopSortMode())
+        root.put("bottomSortMode", getBottomSortMode())
+        root.put("showAllApps", isShowAllApps())
+        root.put("showRecentRow", isShowRecentRow())
+        root.put("showHomeClock", isShowHomeClock())
+        root.put("showHomePerf", isShowHomePerf())
+        root.put("showHomeShortcuts", isShowHomeShortcuts())
+        root.put("showControlCenter", isShowControlCenter())
+        root.put("ccBrightness", isShowCcBrightness())
+        root.put("ccVolume", isShowCcVolume())
+        root.put("ccWifi", isShowCcWifi())
+        root.put("ccBluetooth", isShowCcBluetooth())
+        root.put("ccSleepBottom", isShowCcSleepBottom())
+        root.put("gamepadOpacity", getGamepadOpacity().toDouble())
+        root.put("gamepadScale", getGamepadScale().toDouble())
+        root.put("hapticsEnabled", isHapticsEnabled())
+        root.put("showL3R3", isShowL3R3())
+
+        root.put("hiddenPackages", JSONArray(getHiddenPackages().toList()))
+        root.put("dualScreenAdded", JSONArray((prefs.getStringSet(KEY_DUAL_SCREEN_ADDED, emptySet()) ?: emptySet()).toList()))
+        root.put("dualScreenRemoved", JSONArray((prefs.getStringSet(KEY_DUAL_SCREEN_REMOVED, emptySet()) ?: emptySet()).toList()))
+
+        val foldersObj = JSONObject()
+        for (folder in getFolders()) {
+            foldersObj.put(folder, JSONArray(getAppsInFolder(folder).toList()))
+        }
+        root.put("folders", foldersObj)
+
+        val profilesObj = JSONObject()
+        for (pkg in (prefs.getStringSet(KEY_PROFILE_PACKAGES, emptySet()) ?: emptySet())) {
+            prefs.getString(PREFIX_APP_PROFILE + pkg, null)?.let { raw ->
+                try {
+                    profilesObj.put(pkg, JSONObject(raw))
+                } catch (_: Throwable) {
+                }
+            }
+        }
+        root.put("appProfiles", profilesObj)
+        return root.toString(2)
+    }
+
+    fun importFromJson(jsonText: String): Boolean {
+        return try {
+            val root = JSONObject(jsonText)
+            val ed = prefs.edit()
+            if (root.has("faceLayout")) ed.putInt(KEY_FACE_LAYOUT, root.getInt("faceLayout"))
+            if (root.has("themeMode")) ed.putInt(KEY_THEME_MODE, root.getInt("themeMode"))
+            if (root.has("orientationMode")) ed.putInt(KEY_ORIENTATION_MODE, root.getInt("orientationMode"))
+            if (root.has("splitPercent")) ed.putFloat(KEY_SPLIT_PERCENT, root.getDouble("splitPercent").toFloat().coerceIn(0.40f, 0.68f))
+            if (root.has("topAspectRatio")) ed.putString(KEY_TOP_ASPECT_RATIO, root.getString("topAspectRatio"))
+            if (root.has("bottomAspectRatio")) ed.putString(KEY_BOTTOM_ASPECT_RATIO, root.getString("bottomAspectRatio"))
+            if (root.has("touchControls")) ed.putBoolean(KEY_TOUCH_CONTROLS, root.getBoolean("touchControls"))
+            if (root.has("leftControlMode")) ed.putInt(KEY_LEFT_CONTROL_MODE, root.getInt("leftControlMode"))
+            if (root.has("rightControlMode")) ed.putInt(KEY_RIGHT_CONTROL_MODE, root.getInt("rightControlMode"))
+            if (root.has("topTouchForwarding")) ed.putBoolean(KEY_TOP_TOUCH_FORWARDING, root.getBoolean("topTouchForwarding"))
+            if (root.has("topSortMode")) ed.putInt(KEY_TOP_SORT_MODE, root.getInt("topSortMode"))
+            if (root.has("bottomSortMode")) ed.putInt(KEY_BOTTOM_SORT_MODE, root.getInt("bottomSortMode"))
+            if (root.has("showAllApps")) ed.putBoolean(KEY_SHOW_ALL_APPS, root.getBoolean("showAllApps"))
+            if (root.has("showRecentRow")) ed.putBoolean(KEY_SHOW_RECENT_ROW, root.getBoolean("showRecentRow"))
+            if (root.has("showHomeClock")) ed.putBoolean(KEY_SHOW_HOME_CLOCK, root.getBoolean("showHomeClock"))
+            if (root.has("showHomePerf")) ed.putBoolean(KEY_SHOW_HOME_PERF, root.getBoolean("showHomePerf"))
+            if (root.has("showHomeShortcuts")) ed.putBoolean(KEY_SHOW_HOME_SHORTCUTS, root.getBoolean("showHomeShortcuts"))
+            if (root.has("showControlCenter")) ed.putBoolean(KEY_SHOW_CONTROL_CENTER, root.getBoolean("showControlCenter"))
+            if (root.has("ccBrightness")) ed.putBoolean(KEY_CC_BRIGHTNESS, root.getBoolean("ccBrightness"))
+            if (root.has("ccVolume")) ed.putBoolean(KEY_CC_VOLUME, root.getBoolean("ccVolume"))
+            if (root.has("ccWifi")) ed.putBoolean(KEY_CC_WIFI, root.getBoolean("ccWifi"))
+            if (root.has("ccBluetooth")) ed.putBoolean(KEY_CC_BLUETOOTH, root.getBoolean("ccBluetooth"))
+            if (root.has("ccSleepBottom")) ed.putBoolean(KEY_CC_SLEEP_BOTTOM, root.getBoolean("ccSleepBottom"))
+            if (root.has("gamepadOpacity")) ed.putFloat(KEY_GAMEPAD_OPACITY, root.getDouble("gamepadOpacity").toFloat().coerceIn(0.25f, 1.0f))
+            if (root.has("gamepadScale")) ed.putFloat(KEY_GAMEPAD_SCALE, root.getDouble("gamepadScale").toFloat().coerceIn(0.75f, 1.25f))
+            if (root.has("hapticsEnabled")) ed.putBoolean(KEY_HAPTICS_ENABLED, root.getBoolean("hapticsEnabled"))
+            if (root.has("showL3R3")) ed.putBoolean(KEY_SHOW_L3_R3, root.getBoolean("showL3R3"))
+
+            fun readSet(arr: JSONArray?): Set<String> {
+                if (arr == null) return emptySet()
+                val out = mutableSetOf<String>()
+                for (i in 0 until arr.length()) out.add(arr.getString(i))
+                return out
+            }
+
+            if (root.has("hiddenPackages")) ed.putStringSet(KEY_HIDDEN_PACKAGES, readSet(root.optJSONArray("hiddenPackages")))
+            if (root.has("dualScreenAdded")) ed.putStringSet(KEY_DUAL_SCREEN_ADDED, readSet(root.optJSONArray("dualScreenAdded")))
+            if (root.has("dualScreenRemoved")) ed.putStringSet(KEY_DUAL_SCREEN_REMOVED, readSet(root.optJSONArray("dualScreenRemoved")))
+
+            root.optJSONObject("folders")?.let { foldersObj ->
+                val names = mutableSetOf<String>()
+                val keys = foldersObj.keys()
+                while (keys.hasNext()) {
+                    val name = keys.next()
+                    names.add(name)
+                    ed.putStringSet(PREFIX_FOLDER_APPS + name, readSet(foldersObj.optJSONArray(name)))
+                }
+                ed.putStringSet(KEY_FOLDERS, names)
+            }
+
+            root.optJSONObject("appProfiles")?.let { profilesObj ->
+                val pkgs = mutableSetOf<String>()
+                val keys = profilesObj.keys()
+                while (keys.hasNext()) {
+                    val pkg = keys.next()
+                    profilesObj.optJSONObject(pkg)?.let { prof ->
+                        pkgs.add(pkg)
+                        ed.putString(PREFIX_APP_PROFILE + pkg, prof.toString())
+                    }
+                }
+                ed.putStringSet(KEY_PROFILE_PACKAGES, pkgs)
+            }
+
+            ed.apply()
+            true
+        } catch (_: Throwable) {
+            false
+        }
     }
 }
