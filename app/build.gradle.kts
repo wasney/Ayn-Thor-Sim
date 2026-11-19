@@ -11,8 +11,8 @@ android {
         applicationId = "com.aynthor.simulator"
         minSdk = 31
         targetSdk = 35
-        versionCode = 38
-        versionName = "2.0.9"
+        versionCode = 39
+        versionName = "2.1.0"
     }
 
     signingConfigs {

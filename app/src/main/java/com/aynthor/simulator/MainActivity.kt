@@ -72,7 +72,9 @@ class MainActivity : AppCompatActivity() {
     private lateinit var inputManager: InputManager
     private lateinit var launcherAdapter: AppLauncherAdapter
     private lateinit var bottomLauncherAdapter: AppLauncherAdapter
+    private var activeTopPackage: String? = null
     private var lastBottomPackage: String? = null
+    private var hasBottomAppRunning = false
 
     private val clientDeathToken = android.os.Binder()
     private val ioExecutor = Executors.newSingleThreadExecutor()
@@ -143,7 +145,7 @@ class MainActivity : AppCompatActivity() {
             .daemon(false)
             .processNameSuffix("virtual_display_service")
             .debuggable(false)
-            .version(38)
+            .version(39)
     }
 
     private val serviceConnection = object : ServiceConnection {
@@ -319,9 +321,7 @@ class MainActivity : AppCompatActivity() {
         bottomLauncherAdapter = AppLauncherAdapter(
             onAppClick = { app ->
                 prefs.recordAppLaunch(app.packageName)
-                lastBottomPackage = app.packageName
                 binding.bottomLauncherOverlay.visibility = View.GONE
-                binding.bottomHomeOverlay.visibility = View.GONE
                 launchAppOnDisplay(app, activeBottomDisplayId, hideLauncherAfter = false)
             },
             onAppLongClick = { app -> showAppContextMenu(app) }
@@ -501,9 +501,11 @@ class MainActivity : AppCompatActivity() {
     private fun showAppContextMenu(app: AppInfo) {
         val folders = prefs.getFolders()
         val isHidden = prefs.getHiddenPackages().contains(app.packageName)
+        val isDualScreen = prefs.isDualScreenApp(app.packageName)
         val actions = mutableListOf(
             if (isHidden) "Unhide App" else "Hide App",
-            "Assign to Folders…"
+            "Assign to Folders…",
+            if (isDualScreen) "Unmark as Dual-Screen App" else "Mark as Dual-Screen App"
         )
         AlertDialog.Builder(this)
             .setTitle(app.label)
@@ -528,6 +530,11 @@ class MainActivity : AppCompatActivity() {
                                 .setPositiveButton("Done") { _, _ -> refreshLauncherList() }
                                 .show()
                         }
+                    }
+                    2 -> {
+                        prefs.setDualScreenApp(app.packageName, !isDualScreen)
+                        val msg = if (!isDualScreen) "${app.label} marked as Dual-Screen App" else "${app.label} unmarked as Dual-Screen App"
+                        Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
                     }
                 }
             }
@@ -577,8 +584,9 @@ class MainActivity : AppCompatActivity() {
         }
 
         binding.btnCloseBottom.setOnClickListener {
-            closeBottomApp()
+            handleBottomActionButton()
         }
+        updateBottomActionButton()
 
         binding.btnToggleTouch.setOnClickListener {
             val currentlyVisible = binding.leftGamepadContainer.visibility == View.VISIBLE
@@ -1036,9 +1044,14 @@ class MainActivity : AppCompatActivity() {
             val swappedTasks = service.swapTasksBetweenDisplays(primaryDisplayId, secondaryDisplayId)
             runOnUiThread {
                 if (swappedTasks) {
+                    val prevTop = activeTopPackage
+                    activeTopPackage = lastBottomPackage
+                    lastBottomPackage = prevTop
+                    hasBottomAppRunning = true
                     binding.etTopSearch.clearFocus(); binding.launcherOverlay.visibility = View.GONE
                     binding.bottomLauncherOverlay.visibility = View.GONE
                     binding.bottomHomeOverlay.visibility = View.GONE
+                    updateBottomActionButton()
                     Toast.makeText(this, "Swapped top & bottom apps", Toast.LENGTH_SHORT).show()
                 } else {
                     // Single-task or dual-screen Presentation app (e.g. SeedlessDS, Azahar, DraStic):
@@ -1048,6 +1061,7 @@ class MainActivity : AppCompatActivity() {
                     binding.etTopSearch.clearFocus(); binding.launcherOverlay.visibility = View.GONE
                     binding.bottomLauncherOverlay.visibility = View.GONE
                     binding.bottomHomeOverlay.visibility = View.GONE
+                    updateBottomActionButton()
                     addLocalLog("Visual swap enabled (isSwapped=true)")
                     Toast.makeText(this, "Swapped top & bottom screens", Toast.LENGTH_SHORT).show()
                 }
@@ -1105,22 +1119,66 @@ class MainActivity : AppCompatActivity() {
         binding.bottomSurfaceView.layoutParams = botLp
     }
 
+    private fun updateBottomActionButton() {
+        val homeVisible = binding.bottomHomeOverlay.visibility == View.VISIBLE
+        if (hasBottomAppRunning) {
+            binding.btnCloseBottom.setImageResource(android.R.drawable.ic_menu_close_clear_cancel)
+            binding.btnCloseBottom.imageTintList = android.content.res.ColorStateList.valueOf(Color.parseColor("#9CA3AF"))
+            binding.btnCloseBottom.contentDescription = "Close Bottom App"
+        } else {
+            binding.btnCloseBottom.setImageResource(R.drawable.ic_perf_gauge)
+            val tintColor = if (homeVisible) Color.parseColor("#4C9AFF") else Color.parseColor("#9CA3AF")
+            binding.btnCloseBottom.imageTintList = android.content.res.ColorStateList.valueOf(tintColor)
+            binding.btnCloseBottom.contentDescription = if (homeVisible) {
+                "Hide Performance Dashboard"
+            } else {
+                "Show Performance Dashboard"
+            }
+        }
+    }
+
+    private fun handleBottomActionButton() {
+        if (hasBottomAppRunning) {
+            closeBottomApp()
+        } else {
+            val showing = binding.bottomHomeOverlay.visibility == View.VISIBLE
+            binding.bottomHomeOverlay.visibility = if (showing) View.GONE else View.VISIBLE
+            if (!showing) {
+                updateBottomHomeDashboard()
+            } else if (primaryDisplayId > 0) {
+                ioExecutor.execute { userService?.focusDisplay(primaryDisplayId) }
+            }
+            updateBottomActionButton()
+        }
+    }
+
     private fun closeBottomApp() {
         val service = userService ?: return
         if (secondaryDisplayId <= 0) return
+        val pkgToStop = lastBottomPackage
         ioExecutor.execute {
             var ok = service.closeTasksOnDisplay(secondaryDisplayId)
-            if (!ok && !lastBottomPackage.isNullOrBlank()) {
-                ok = service.forceStopPackage(lastBottomPackage!!)
+            if (!ok && !pkgToStop.isNullOrBlank()) {
+                ok = service.forceStopPackage(pkgToStop)
+            }
+            if (primaryDisplayId > 0) {
+                service.focusDisplay(primaryDisplayId)
             }
             runOnUiThread {
-                binding.bottomHomeOverlay.visibility = View.VISIBLE
-                if (ok) {
-                    lastBottomPackage = null
-                    Toast.makeText(this, "Closed bottom app", Toast.LENGTH_SHORT).show()
+                hasBottomAppRunning = false
+                lastBottomPackage = null
+                // Keep bottom display surface visible so dual-screen apps (like SeedlessDS) immediately reappear;
+                // tapping the button a second time (now a gauge icon) opens the Performance Dashboard.
+                binding.bottomHomeOverlay.visibility = View.GONE
+                updateBottomActionButton()
+                val msg = if (ok && prefs.isDualScreenApp(activeTopPackage)) {
+                    "Closed bottom app — returned to dual-screen"
+                } else if (ok) {
+                    "Closed bottom app"
                 } else {
-                    Toast.makeText(this, "Returned to Bottom Home", Toast.LENGTH_SHORT).show()
+                    "Bottom display cleared"
                 }
+                Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
             }
         }
     }
@@ -1151,6 +1209,48 @@ class MainActivity : AppCompatActivity() {
             return
         }
 
+        val isLaunchingDualScreen = prefs.isDualScreenApp(app.packageName)
+        var targetDisplayId = displayId
+        var redirectedToTopFromDualScreen = false
+
+        if (isLaunchingDualScreen) {
+            // Dual-screen Presentation apps (SeedlessDS, DraStic, Azahar, etc.) must always run on primaryDisplayId
+            // with secondaryDisplayId cleared so their Presentation attaches cleanly to both screens.
+            targetDisplayId = primaryDisplayId
+            if (isSwapped) {
+                isSwapped = false
+                syncSurfaceMetadata()
+            }
+            binding.bottomHomeOverlay.visibility = View.GONE
+            binding.bottomLauncherOverlay.visibility = View.GONE
+            val hadBottom = hasBottomAppRunning || !lastBottomPackage.isNullOrBlank()
+            hasBottomAppRunning = false
+            lastBottomPackage = null
+            if (hadBottom && secondaryDisplayId > 0) {
+                ioExecutor.execute { userService?.closeTasksOnDisplay(secondaryDisplayId) }
+            }
+        } else if (displayId == secondaryDisplayId &&
+            prefs.isDualScreenApp(activeTopPackage) &&
+            !hasBottomAppRunning
+        ) {
+            // Android's TYPE_PRESENTATION layer draws over normal Activities on secondaryDisplayId while a
+            // dual-screen app is actively resumed on top. Route the new app to top to cleanly pause the
+            // dual-screen app so the new app is immediately visible.
+            targetDisplayId = primaryDisplayId
+            redirectedToTopFromDualScreen = true
+            binding.bottomHomeOverlay.visibility = View.GONE
+        }
+
+        val finalDisplayId = targetDisplayId
+        if (finalDisplayId == primaryDisplayId) {
+            activeTopPackage = app.packageName
+        } else if (finalDisplayId == secondaryDisplayId) {
+            lastBottomPackage = app.packageName
+            hasBottomAppRunning = true
+            binding.bottomHomeOverlay.visibility = View.GONE
+        }
+        updateBottomActionButton()
+
         var launched = false
         try {
             val intent = Intent(Intent.ACTION_MAIN).apply {
@@ -1160,7 +1260,7 @@ class MainActivity : AppCompatActivity() {
                 // app like SeedlessDS resumes the existing game cleanly instead of spawning a duplicate.
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             }
-            val options = ActivityOptions.makeBasic().setLaunchDisplayId(displayId)
+            val options = ActivityOptions.makeBasic().setLaunchDisplayId(finalDisplayId)
             startActivity(intent, options.toBundle())
             launched = true
         } catch (_: Throwable) {
@@ -1169,12 +1269,15 @@ class MainActivity : AppCompatActivity() {
 
         if (!launched) {
             ioExecutor.execute {
-                val ok = userService?.launchAppOnDisplay(app.packageName, app.activityName, displayId) == true
+                val ok = userService?.launchAppOnDisplay(app.packageName, app.activityName, finalDisplayId) == true
                 runOnUiThread {
                     if (ok) {
-                        addLocalLog("Launched ${app.packageName} on display $displayId (via service)")
-                        if (hideLauncherAfter) {
+                        addLocalLog("Launched ${app.packageName} on display $finalDisplayId (via service)")
+                        if (hideLauncherAfter || isLaunchingDualScreen || redirectedToTopFromDualScreen) {
                             binding.etTopSearch.clearFocus(); binding.launcherOverlay.visibility = View.GONE
+                        }
+                        if (redirectedToTopFromDualScreen) {
+                            Toast.makeText(this, "Opened ${app.label} on top (paused dual-screen app)", Toast.LENGTH_SHORT).show()
                         }
                     } else {
                         Toast.makeText(this, "Failed to launch ${app.label}", Toast.LENGTH_SHORT).show()
@@ -1182,10 +1285,13 @@ class MainActivity : AppCompatActivity() {
                 }
             }
         } else {
-            addLocalLog("Launched ${app.packageName} on display $displayId")
-            binding.root.postDelayed({ ioExecutor.execute { userService?.focusDisplay(displayId) } }, 450L)
-            if (hideLauncherAfter) {
+            addLocalLog("Launched ${app.packageName} on display $finalDisplayId")
+            binding.root.postDelayed({ ioExecutor.execute { userService?.focusDisplay(finalDisplayId) } }, 450L)
+            if (hideLauncherAfter || isLaunchingDualScreen || redirectedToTopFromDualScreen) {
                 binding.etTopSearch.clearFocus(); binding.launcherOverlay.visibility = View.GONE
+            }
+            if (redirectedToTopFromDualScreen) {
+                Toast.makeText(this, "Opened ${app.label} on top (paused dual-screen app)", Toast.LENGTH_SHORT).show()
             }
         }
     }
@@ -1268,6 +1374,7 @@ class MainActivity : AppCompatActivity() {
         }
         binding.btnHomeHideDashboard.setOnClickListener {
             binding.bottomHomeOverlay.visibility = View.GONE
+            updateBottomActionButton()
         }
         applyBottomHomeWidgetVisibility()
     }

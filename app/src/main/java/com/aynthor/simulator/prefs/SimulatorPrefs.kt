@@ -40,6 +40,18 @@ class SimulatorPrefs(context: Context) {
         private const val KEY_FOLDERS = "custom_folders"
         private const val PREFIX_FOLDER_APPS = "folder_apps_"
         private const val PREFIX_LAST_LAUNCH = "last_launch_"
+        private const val KEY_DUAL_SCREEN_ADDED = "dual_screen_added"
+        private const val KEY_DUAL_SCREEN_REMOVED = "dual_screen_removed"
+
+        val DEFAULT_DUAL_SCREEN_PACKAGES = setOf(
+            "com.seedlessds.app",
+            "com.dsemu.drastic",
+            "io.github.azahar_emu.azahar",
+            "org.citra.citra_emu",
+            "org.lime3ds.android",
+            "me.magnum.melonds",
+            "info.cemu.cemu"
+        )
     }
 
     fun getHiddenPackages(): Set<String> {
@@ -162,5 +174,30 @@ class SimulatorPrefs(context: Context) {
 
     fun getLastLaunchTime(packageName: String): Long {
         return prefs.getLong(PREFIX_LAST_LAUNCH + packageName, 0L)
+    }
+
+    fun isDualScreenApp(packageName: String?): Boolean {
+        if (packageName.isNullOrBlank()) return false
+        val added = prefs.getStringSet(KEY_DUAL_SCREEN_ADDED, emptySet()) ?: emptySet()
+        if (added.contains(packageName)) return true
+        val removed = prefs.getStringSet(KEY_DUAL_SCREEN_REMOVED, emptySet()) ?: emptySet()
+        if (removed.contains(packageName)) return false
+        return DEFAULT_DUAL_SCREEN_PACKAGES.contains(packageName)
+    }
+
+    fun setDualScreenApp(packageName: String, enabled: Boolean) {
+        val added = (prefs.getStringSet(KEY_DUAL_SCREEN_ADDED, emptySet()) ?: emptySet()).toMutableSet()
+        val removed = (prefs.getStringSet(KEY_DUAL_SCREEN_REMOVED, emptySet()) ?: emptySet()).toMutableSet()
+        if (enabled) {
+            added.add(packageName)
+            removed.remove(packageName)
+        } else {
+            added.remove(packageName)
+            removed.add(packageName)
+        }
+        prefs.edit()
+            .putStringSet(KEY_DUAL_SCREEN_ADDED, added)
+            .putStringSet(KEY_DUAL_SCREEN_REMOVED, removed)
+            .apply()
     }
 }
