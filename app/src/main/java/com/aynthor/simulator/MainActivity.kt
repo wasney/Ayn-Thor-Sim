@@ -86,6 +86,12 @@ class MainActivity : AppCompatActivity() {
     private var isServiceBound = false
     private var topSurfaceReady = false
     private var bottomSurfaceReady = false
+    private var topSurfaceWidth = 0
+    private var topSurfaceHeight = 0
+    private var bottomSurfaceWidth = 0
+    private var bottomSurfaceHeight = 0
+    private var pendingSurfaceSwapCommit: Runnable? = null
+    private var pendingSurfaceSwapFallback: Runnable? = null
 
     private var primaryDisplayId = -1    // 1920x1080
     private var secondaryDisplayId = -1  // 1240x1080
@@ -143,7 +149,7 @@ class MainActivity : AppCompatActivity() {
             .daemon(false)
             .processNameSuffix("virtual_display_service")
             .debuggable(false)
-            .version(35)
+            .version(36)
     }
 
     private val serviceConnection = object : ServiceConnection {
@@ -265,9 +271,15 @@ class MainActivity : AppCompatActivity() {
                     topSurfaceReady = true
                     tryCreateVirtualDisplays()
                 }
-                override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) {}
+                override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) {
+                    topSurfaceWidth = width
+                    topSurfaceHeight = height
+                    maybeCommitPendingSurfaceSwap()
+                }
                 override fun surfaceDestroyed(holder: SurfaceHolder) {
                     topSurfaceReady = false
+                    topSurfaceWidth = 0
+                    topSurfaceHeight = 0
                 }
             })
         }
@@ -295,9 +307,15 @@ class MainActivity : AppCompatActivity() {
                     bottomSurfaceReady = true
                     tryCreateVirtualDisplays()
                 }
-                override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) {}
+                override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) {
+                    bottomSurfaceWidth = width
+                    bottomSurfaceHeight = height
+                    maybeCommitPendingSurfaceSwap()
+                }
                 override fun surfaceDestroyed(holder: SurfaceHolder) {
                     bottomSurfaceReady = false
+                    bottomSurfaceWidth = 0
+                    bottomSurfaceHeight = 0
                 }
             })
         }
@@ -1027,44 +1045,88 @@ class MainActivity : AppCompatActivity() {
         val service = userService ?: return
         if (primaryDisplayId <= 0 || secondaryDisplayId <= 0) return
 
-        val topSurface = binding.topSurfaceView.holder.surface
-        val bottomSurface = binding.bottomSurfaceView.holder.surface
-        val currentlySwapped = isSwapped
+        // If currently surface-swapped (dual-screen Presentation mode), restore normal mapping cleanly
+        if (isSwapped) {
+            applySurfaceSwap(swapped = false, toastMsg = "Restored top & bottom screens")
+            return
+        }
 
         ioExecutor.execute {
-            // If currently surface-swapped (dual-screen Presentation mode), restore normal mapping cleanly
-            if (currentlySwapped) {
-                service.swapSurfaces(topSurface, bottomSurface)
-                runOnUiThread {
-                    isSwapped = false
-                    syncSurfaceMetadata()
-                    Toast.makeText(this, "Restored top & bottom screens", Toast.LENGTH_SHORT).show()
-                }
-                return@execute
-            }
-
             // Two independent apps running: swap tasks between displays so each resizes natively
             val swappedTasks = service.swapTasksBetweenDisplays(primaryDisplayId, secondaryDisplayId)
-            if (swappedTasks) {
-                runOnUiThread {
+            runOnUiThread {
+                if (swappedTasks) {
                     binding.etTopSearch.clearFocus(); binding.launcherOverlay.visibility = View.GONE
                     binding.bottomLauncherOverlay.visibility = View.GONE
                     binding.bottomHomeOverlay.visibility = View.GONE
                     Toast.makeText(this, "Swapped top & bottom apps", Toast.LENGTH_SHORT).show()
-                }
-            } else {
-                // Single-task or dual-screen Presentation app (e.g. SeedlessDS, Azahar, DraStic):
-                // swap the rendered display surfaces without moving tasks or breaking Presentations
-                service.swapSurfaces(bottomSurface, topSurface)
-                runOnUiThread {
-                    isSwapped = true
-                    syncSurfaceMetadata()
+                } else {
+                    // Single-task or dual-screen Presentation app (e.g. SeedlessDS, Azahar, DraStic):
+                    // resize SurfaceView buffers FIRST, then attach swapped virtual displays once surfaceChanged fires
                     binding.etTopSearch.clearFocus(); binding.launcherOverlay.visibility = View.GONE
                     binding.bottomLauncherOverlay.visibility = View.GONE
                     binding.bottomHomeOverlay.visibility = View.GONE
-                    Toast.makeText(this, "Swapped top & bottom screens", Toast.LENGTH_SHORT).show()
+                    applySurfaceSwap(swapped = true, toastMsg = "Swapped top & bottom screens")
                 }
             }
+        }
+    }
+
+    private fun applySurfaceSwap(swapped: Boolean, toastMsg: String) {
+        val service = userService ?: return
+        if (primaryDisplayId <= 0 || secondaryDisplayId <= 0) return
+
+        pendingSurfaceSwapFallback?.let { uiHandler.removeCallbacks(it) }
+        pendingSurfaceSwapFallback = null
+        pendingSurfaceSwapCommit = null
+
+        isSwapped = swapped
+        syncSurfaceMetadata()
+
+        val commit = Runnable {
+            pendingSurfaceSwapFallback?.let { uiHandler.removeCallbacks(it) }
+            pendingSurfaceSwapFallback = null
+            pendingSurfaceSwapCommit = null
+
+            val freshTopSurface = binding.topSurfaceView.holder.surface
+            val freshBottomSurface = binding.bottomSurfaceView.holder.surface
+            if (freshTopSurface != null && freshTopSurface.isValid &&
+                freshBottomSurface != null && freshBottomSurface.isValid
+            ) {
+                ioExecutor.execute {
+                    if (swapped) {
+                        service.swapSurfaces(freshBottomSurface, freshTopSurface)
+                    } else {
+                        service.swapSurfaces(freshTopSurface, freshBottomSurface)
+                    }
+                    service.focusDisplay(primaryDisplayId)
+                }
+            }
+        }
+
+        pendingSurfaceSwapCommit = commit
+        val fallback = Runnable {
+            pendingSurfaceSwapCommit?.run()
+        }
+        pendingSurfaceSwapFallback = fallback
+        uiHandler.postDelayed(fallback, 200L)
+
+        // If both surfaces already match their target fixed sizes, commit immediately
+        maybeCommitPendingSurfaceSwap()
+        Toast.makeText(this, toastMsg, Toast.LENGTH_SHORT).show()
+    }
+
+    private fun maybeCommitPendingSurfaceSwap() {
+        val commit = pendingSurfaceSwapCommit ?: return
+        val expectedTopW = if (isSwapped) BOTTOM_WIDTH else TOP_WIDTH
+        val expectedTopH = if (isSwapped) BOTTOM_HEIGHT else TOP_HEIGHT
+        val expectedBotW = if (isSwapped) TOP_WIDTH else BOTTOM_WIDTH
+        val expectedBotH = if (isSwapped) TOP_HEIGHT else BOTTOM_HEIGHT
+
+        if (topSurfaceWidth == expectedTopW && topSurfaceHeight == expectedTopH &&
+            bottomSurfaceWidth == expectedBotW && bottomSurfaceHeight == expectedBotH
+        ) {
+            commit.run()
         }
     }
 
