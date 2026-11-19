@@ -80,7 +80,14 @@ class MainActivity : AppCompatActivity() {
     @Volatile private var lTrigger = 0f
     @Volatile private var rTrigger = 0f
     private val keyDownTimes = mutableMapOf<Int, Long>()
-    private val localLogs = mutableListOf<String>()
+    private val localLogs = java.util.concurrent.CopyOnWriteArrayList<String>()
+
+    private fun addLocalLog(msg: String) {
+        localLogs.add(msg)
+        while (localLogs.size > 40) {
+            localLogs.removeAt(0)
+        }
+    }
 
     private val activeTopDisplayId: Int
         get() = if (isSwapped) secondaryDisplayId else primaryDisplayId
@@ -95,7 +102,7 @@ class MainActivity : AppCompatActivity() {
             .daemon(false)
             .processNameSuffix("virtual_display_service")
             .debuggable(false)
-            .version(1)
+            .version(11)
     }
 
     private val serviceConnection = object : ServiceConnection {
@@ -503,7 +510,10 @@ class MainActivity : AppCompatActivity() {
 
         // Always target the top virtual display (primaryDisplayId) for gamepad controls
         val targetId = primaryDisplayId
-        if (targetId <= 0) return
+        if (targetId <= 0) {
+            addLocalLog("vKey $keyCode dropped: primaryDisplayId=$targetId")
+            return
+        }
 
         // Also update HAT axes when D-pad is pressed so games reading either KeyEvent or HAT work
         when (keyCode) {
@@ -551,7 +561,10 @@ class MainActivity : AppCompatActivity() {
 
     private fun sendVirtualJoystick() {
         val targetId = primaryDisplayId
-        if (targetId <= 0) return
+        if (targetId <= 0) {
+            addLocalLog("vKey $keyCode dropped: primaryDisplayId=$targetId")
+            return
+        }
         if (!joystickPending.compareAndSet(false, true)) return
 
         inputExecutor.execute {
@@ -839,6 +852,7 @@ class MainActivity : AppCompatActivity() {
                 }
             }
         } else if (hideLauncherAfter) {
+            addLocalLog("Launched ${app.packageName} on display $displayId")
             binding.launcherOverlay.visibility = View.GONE
         }
     }
@@ -898,6 +912,27 @@ class MainActivity : AppCompatActivity() {
                     .setNegativeButton("Close", null)
                     .show()
             }
+        }
+    }
+
+
+    override fun onPause() {
+        super.onPause()
+        // Release any held virtual keys so nothing stays stuck when switching apps
+        val heldKeys = keyDownTimes.keys.toList()
+        for (kc in heldKeys) {
+            handleVirtualKey(kc, false)
+        }
+        if (leftStickX != 0f || leftStickY != 0f || rightStickX != 0f || rightStickY != 0f || lTrigger != 0f || rTrigger != 0f) {
+            leftStickX = 0f
+            leftStickY = 0f
+            rightStickX = 0f
+            rightStickY = 0f
+            lTrigger = 0f
+            rTrigger = 0f
+            hatX = 0f
+            hatY = 0f
+            sendVirtualJoystick()
         }
     }
 
