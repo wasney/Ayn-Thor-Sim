@@ -14,6 +14,21 @@
         android:orientation="horizontal"
         app:layout_constraintGuide_percent="0.53" />
 
+    <!-- Portrait-only guidelines for 3-tier stacked layout (Top Screen / Bottom Screen / Side-by-Side Gamepad) -->
+    <androidx.constraintlayout.widget.Guideline
+        android:id="@+id/portraitControlsGuideline"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        app:layout_constraintGuide_percent="0.72" />
+
+    <androidx.constraintlayout.widget.Guideline
+        android:id="@+id/portraitCenterGuideline"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        app:layout_constraintGuide_percent="0.50" />
+
     <!-- Permanent SurfaceViews as direct children of rootLayout so visual swapping moves their
          ConstraintLayout bounds without ever detaching or recreating VirtualDisplay Surfaces -->
     <com.aynthor.simulator.input.DisplaySurfaceView
@@ -143,6 +158,36 @@
                     android:paddingHorizontal="10dp"
                     android:text="@string/filter_apps"
                     android:textSize="11sp" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:id="@+id/topRecentSection"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:paddingBottom="6dp"
+                android:visibility="gone">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:paddingBottom="3dp"
+                    android:text="RECENT"
+                    android:textColor="#4C9AFF"
+                    android:textSize="10sp"
+                    android:textStyle="bold" />
+
+                <HorizontalScrollView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:scrollbars="none">
+
+                    <LinearLayout
+                        android:id="@+id/topRecentRow"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal" />
+                </HorizontalScrollView>
             </LinearLayout>
 
             <androidx.recyclerview.widget.RecyclerView
@@ -424,8 +469,7 @@
             style="@style/Widget.Material3.Button"
             android:layout_width="wrap_content"
             android:layout_height="38dp"
-            android:layout_gravity="bottom|center_horizontal"
-            android:layout_marginBottom="14dp"
+            android:layout_gravity="center"
             android:backgroundTint="#2563EB"
             android:elevation="6dp"
             android:insetTop="0dp"
@@ -541,6 +585,36 @@
                     android:text="A-Z"
                     android:textColor="#D0D0D8"
                     android:textSize="10sp" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:id="@+id/bottomRecentSection"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:paddingBottom="4dp"
+                android:visibility="gone">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:paddingBottom="2dp"
+                    android:text="RECENT"
+                    android:textColor="#4C9AFF"
+                    android:textSize="9sp"
+                    android:textStyle="bold" />
+
+                <HorizontalScrollView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:scrollbars="none">
+
+                    <LinearLayout
+                        android:id="@+id/bottomRecentRow"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal" />
+                </HorizontalScrollView>
             </LinearLayout>
 
             <androidx.recyclerview.widget.RecyclerView

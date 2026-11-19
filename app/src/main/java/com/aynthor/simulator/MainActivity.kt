@@ -38,6 +38,9 @@ import android.view.MotionEvent
 import android.view.SurfaceHolder
 import android.view.View
 import android.widget.FrameLayout
+import android.content.pm.ActivityInfo
+import android.text.TextUtils
+import android.widget.ImageView
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
@@ -147,7 +150,7 @@ class MainActivity : AppCompatActivity() {
             .daemon(false)
             .processNameSuffix("virtual_display_service")
             .debuggable(false)
-            .version(40)
+            .version(41)
     }
 
     private val serviceConnection = object : ServiceConnection {
@@ -221,6 +224,8 @@ class MainActivity : AppCompatActivity() {
         setupBottomHomeScreen()
         setupVirtualGamepad()
         applyAppTheme()
+        applyOrientationMode()
+        applyDisplayLayout()
         updatePhysicalControllerState()
         uiHandler.post(homeRefreshRunnable)
 
@@ -235,6 +240,99 @@ class MainActivity : AppCompatActivity() {
     override fun onWindowFocusChanged(hasFocus: Boolean) {
         super.onWindowFocusChanged(hasFocus)
         if (hasFocus) setupFullscreen()
+    }
+
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+        applyDisplayLayout()
+        syncSurfaceMetadata()
+    }
+
+    private fun applyOrientationMode() {
+        requestedOrientation = when (prefs.getOrientationMode()) {
+            SimulatorPrefs.ORIENTATION_PORTRAIT -> ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT
+            SimulatorPrefs.ORIENTATION_AUTO -> ActivityInfo.SCREEN_ORIENTATION_FULL_SENSOR
+            SimulatorPrefs.ORIENTATION_SYSTEM -> ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+            else -> ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+        }
+    }
+
+    private fun applyDisplayLayout() {
+        val isPortrait = resources.configuration.orientation == Configuration.ORIENTATION_PORTRAIT
+        val splitPct = prefs.getSplitPercent()
+        val topRatio = prefs.getTopAspectRatio()
+        val bottomRatio = prefs.getBottomAspectRatio()
+
+        val topLp = binding.topScreenContainer.layoutParams as ConstraintLayout.LayoutParams
+        val botLp = binding.bottomScreenContainer.layoutParams as ConstraintLayout.LayoutParams
+        val leftLp = binding.leftSidebar.layoutParams as ConstraintLayout.LayoutParams
+        val rightLp = binding.rightSidebar.layoutParams as ConstraintLayout.LayoutParams
+
+        if (isPortrait) {
+            val touchVisible = manualTouchOverride ?: (!physicalControllerConnected && prefs.isTouchControlsEnabled())
+            val controlsTop = if (touchVisible) 0.72f else 0.90f
+            binding.portraitControlsGuideline.setGuidelinePercent(controlsTop)
+            binding.splitGuideline.setGuidelinePercent((controlsTop * splitPct).coerceIn(0.25f, controlsTop - 0.22f))
+
+            topLp.topToTop = ConstraintLayout.LayoutParams.PARENT_ID
+            topLp.bottomToTop = R.id.splitGuideline
+            topLp.bottomToBottom = ConstraintLayout.LayoutParams.UNSET
+            topLp.startToStart = ConstraintLayout.LayoutParams.PARENT_ID
+            topLp.endToEnd = ConstraintLayout.LayoutParams.PARENT_ID
+            topLp.dimensionRatio = if (topRatio == "Fill") null else topRatio
+
+            botLp.topToBottom = R.id.splitGuideline
+            botLp.bottomToTop = R.id.portraitControlsGuideline
+            botLp.bottomToBottom = ConstraintLayout.LayoutParams.UNSET
+            botLp.startToStart = ConstraintLayout.LayoutParams.PARENT_ID
+            botLp.endToEnd = ConstraintLayout.LayoutParams.PARENT_ID
+            botLp.dimensionRatio = if (bottomRatio == "Fill") null else bottomRatio
+
+            leftLp.topToBottom = R.id.portraitControlsGuideline
+            leftLp.bottomToBottom = ConstraintLayout.LayoutParams.PARENT_ID
+            leftLp.startToStart = ConstraintLayout.LayoutParams.PARENT_ID
+            leftLp.endToStart = R.id.portraitCenterGuideline
+            leftLp.endToEnd = ConstraintLayout.LayoutParams.UNSET
+
+            rightLp.topToBottom = R.id.portraitControlsGuideline
+            rightLp.bottomToBottom = ConstraintLayout.LayoutParams.PARENT_ID
+            rightLp.startToEnd = R.id.portraitCenterGuideline
+            rightLp.startToStart = ConstraintLayout.LayoutParams.UNSET
+            rightLp.endToEnd = ConstraintLayout.LayoutParams.PARENT_ID
+        } else {
+            binding.splitGuideline.setGuidelinePercent(splitPct)
+
+            topLp.topToTop = ConstraintLayout.LayoutParams.PARENT_ID
+            topLp.bottomToTop = R.id.splitGuideline
+            topLp.bottomToBottom = ConstraintLayout.LayoutParams.UNSET
+            topLp.startToStart = ConstraintLayout.LayoutParams.PARENT_ID
+            topLp.endToEnd = ConstraintLayout.LayoutParams.PARENT_ID
+            topLp.dimensionRatio = if (topRatio == "Fill") null else topRatio
+
+            botLp.topToBottom = R.id.splitGuideline
+            botLp.bottomToTop = ConstraintLayout.LayoutParams.UNSET
+            botLp.bottomToBottom = ConstraintLayout.LayoutParams.PARENT_ID
+            botLp.startToStart = ConstraintLayout.LayoutParams.PARENT_ID
+            botLp.endToEnd = ConstraintLayout.LayoutParams.PARENT_ID
+            botLp.dimensionRatio = if (bottomRatio == "Fill") null else bottomRatio
+
+            leftLp.topToBottom = R.id.splitGuideline
+            leftLp.bottomToBottom = ConstraintLayout.LayoutParams.PARENT_ID
+            leftLp.startToStart = ConstraintLayout.LayoutParams.PARENT_ID
+            leftLp.endToStart = R.id.bottomScreenContainer
+            leftLp.endToEnd = ConstraintLayout.LayoutParams.UNSET
+
+            rightLp.topToBottom = R.id.splitGuideline
+            rightLp.bottomToBottom = ConstraintLayout.LayoutParams.PARENT_ID
+            rightLp.startToEnd = R.id.bottomScreenContainer
+            rightLp.startToStart = ConstraintLayout.LayoutParams.UNSET
+            rightLp.endToEnd = ConstraintLayout.LayoutParams.PARENT_ID
+        }
+
+        binding.topScreenContainer.layoutParams = topLp
+        binding.bottomScreenContainer.layoutParams = botLp
+        binding.leftSidebar.layoutParams = leftLp
+        binding.rightSidebar.layoutParams = rightLp
     }
 
     private fun setupFullscreen() {
@@ -451,6 +549,93 @@ class MainActivity : AppCompatActivity() {
         bottomLauncherAdapter.submitList(bottomList)
         if (topList.isNotEmpty() && launcherAdapter.selectedPosition < 0) {
             launcherAdapter.setSelectedPosition(0)
+        }
+        populateRecentRow(
+            section = binding.topRecentSection,
+            row = binding.topRecentRow,
+            hideForSearch = topSearchQuery.isNotBlank(),
+            maxItems = 6,
+            iconDp = 36,
+            onClick = { app ->
+                prefs.recordAppLaunch(app.packageName)
+                launchAppOnDisplay(app, activeTopDisplayId, hideLauncherAfter = true)
+            }
+        )
+        populateRecentRow(
+            section = binding.bottomRecentSection,
+            row = binding.bottomRecentRow,
+            hideForSearch = bottomSearchQuery.isNotBlank(),
+            maxItems = 4,
+            iconDp = 30,
+            onClick = { app ->
+                prefs.recordAppLaunch(app.packageName)
+                binding.bottomLauncherOverlay.visibility = View.GONE
+                launchAppOnDisplay(app, activeBottomDisplayId, hideLauncherAfter = false)
+            }
+        )
+    }
+
+    private fun populateRecentRow(
+        section: View,
+        row: LinearLayout,
+        hideForSearch: Boolean,
+        maxItems: Int,
+        iconDp: Int,
+        onClick: (AppInfo) -> Unit
+    ) {
+        if (!prefs.isShowRecentRow() || hideForSearch) {
+            section.visibility = View.GONE
+            return
+        }
+        val recentApps = allApps
+            .filter { prefs.getLastLaunchTime(it.packageName) > 0L }
+            .sortedByDescending { prefs.getLastLaunchTime(it.packageName) }
+            .take(maxItems)
+
+        if (recentApps.isEmpty()) {
+            section.visibility = View.GONE
+            return
+        }
+
+        section.visibility = View.VISIBLE
+        row.removeAllViews()
+        val density = resources.displayMetrics.density
+        val iconPx = (iconDp * density).toInt()
+        val itemW = ((iconDp + 26) * density).toInt()
+        val pad = (4 * density).toInt()
+        val labelColor = if (isLightThemeActive) Color.parseColor("#18181B") else Color.parseColor("#E5E7EB")
+
+        for (app in recentApps) {
+            val item = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                gravity = Gravity.CENTER_HORIZONTAL
+                setPadding(pad, pad, pad, pad)
+                setBackgroundResource(R.drawable.app_item_bg)
+                layoutParams = LinearLayout.LayoutParams(itemW, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
+                    marginEnd = (6 * density).toInt()
+                }
+                setOnClickListener { onClick(app) }
+                setOnLongClickListener {
+                    showAppContextMenu(app)
+                    true
+                }
+            }
+            val iconView = ImageView(this).apply {
+                layoutParams = LinearLayout.LayoutParams(iconPx, iconPx)
+                setImageDrawable(app.icon)
+            }
+            val labelView = TextView(this).apply {
+                text = app.label
+                textSize = if (iconDp >= 34) 10f else 9f
+                setTextColor(labelColor)
+                maxLines = 1
+                ellipsize = TextUtils.TruncateAt.END
+                gravity = Gravity.CENTER_HORIZONTAL
+                setPadding(0, (2 * density).toInt(), 0, 0)
+            }
+            item.addView(iconView)
+            item.addView(labelView)
+            row.addView(item)
         }
     }
 
@@ -1117,18 +1302,20 @@ class MainActivity : AppCompatActivity() {
             botLp.endToEnd = R.id.topScreenContainer
             botLp.dimensionRatio = "W,1240:1080"
         } else {
-            // Normal: topSurfaceView -> topScreenContainer (16:9), bottomSurfaceView -> bottomScreenContainer (1240:1080)
+            // Normal: match user's configured top & bottom aspect ratios cleanly inside each container
+            val cfgTopRatio = prefs.getTopAspectRatio()
+            val cfgBotRatio = prefs.getBottomAspectRatio()
             topLp.topToTop = R.id.topScreenContainer
             topLp.bottomToBottom = R.id.topScreenContainer
             topLp.startToStart = R.id.topScreenContainer
             topLp.endToEnd = R.id.topScreenContainer
-            topLp.dimensionRatio = "16:9"
+            topLp.dimensionRatio = if (cfgTopRatio == "Fill") null else cfgTopRatio
 
             botLp.topToTop = R.id.bottomScreenContainer
             botLp.bottomToBottom = R.id.bottomScreenContainer
             botLp.startToStart = R.id.bottomScreenContainer
             botLp.endToEnd = R.id.bottomScreenContainer
-            botLp.dimensionRatio = "1240:1080"
+            botLp.dimensionRatio = if (cfgBotRatio == "Fill") null else cfgBotRatio
         }
 
         binding.topSurfaceView.layoutParams = topLp
@@ -1285,6 +1472,7 @@ class MainActivity : AppCompatActivity() {
             binding.bottomHomeOverlay.visibility = View.GONE
         }
         updateBottomActionButton()
+        refreshLauncherList()
 
         var launched = false
         try {
@@ -1588,20 +1776,76 @@ class MainActivity : AppCompatActivity() {
         }
         container.addView(themeGroup)
 
-        // 3. Bottom Home Screen Widgets
-        addSectionHeader("Bottom Home Screen Widgets")
+        // 3. Screen Orientation
+        addSectionHeader("Screen Orientation")
+        val orientGroup = RadioGroup(this)
+        val rbOrientLand = RadioButton(this).apply { text = "Landscape (Default)" }
+        val rbOrientPort = RadioButton(this).apply { text = "Portrait" }
+        val rbOrientAuto = RadioButton(this).apply { text = "Auto-Rotate (All Orientations)" }
+        val rbOrientSys = RadioButton(this).apply { text = "Follow Phone Settings" }
+        orientGroup.addView(rbOrientLand)
+        orientGroup.addView(rbOrientPort)
+        orientGroup.addView(rbOrientAuto)
+        orientGroup.addView(rbOrientSys)
+        when (prefs.getOrientationMode()) {
+            SimulatorPrefs.ORIENTATION_PORTRAIT -> rbOrientPort.isChecked = true
+            SimulatorPrefs.ORIENTATION_AUTO -> rbOrientAuto.isChecked = true
+            SimulatorPrefs.ORIENTATION_SYSTEM -> rbOrientSys.isChecked = true
+            else -> rbOrientLand.isChecked = true
+        }
+        container.addView(orientGroup)
+
+        // 4. Display Sizes & Aspect Ratios
+        addSectionHeader("Top / Bottom Height Split")
+        val splitLabels = arrayOf("45% Top / 55% Bottom", "50% Top / 50% Bottom", "53% Top / 47% Bottom (Default)", "58% Top / 42% Bottom", "62% Top / 38% Bottom")
+        val splitValues = floatArrayOf(0.45f, 0.50f, 0.53f, 0.58f, 0.62f)
+        val splitSpinner = android.widget.Spinner(this).apply {
+            adapter = android.widget.ArrayAdapter(this@MainActivity, android.R.layout.simple_spinner_dropdown_item, splitLabels)
+            val cur = prefs.getSplitPercent()
+            val bestIdx = splitValues.indices.minByOrNull { kotlin.math.abs(splitValues[it] - cur) } ?: 2
+            setSelection(bestIdx)
+        }
+        container.addView(splitSpinner)
+
+        addSectionHeader("Top Screen Aspect Ratio")
+        val topRatioLabels = arrayOf("16:9 (Default)", "4:3", "3:2", "Fill Width")
+        val topRatioValues = arrayOf("16:9", "4:3", "3:2", "Fill")
+        val topRatioSpinner = android.widget.Spinner(this).apply {
+            adapter = android.widget.ArrayAdapter(this@MainActivity, android.R.layout.simple_spinner_dropdown_item, topRatioLabels)
+            val idx = topRatioValues.indexOf(prefs.getTopAspectRatio()).takeIf { it >= 0 } ?: 0
+            setSelection(idx)
+        }
+        container.addView(topRatioSpinner)
+
+        addSectionHeader("Bottom Screen Aspect Ratio")
+        val botRatioLabels = arrayOf("1240:1080 (Thor Default)", "4:3", "1:1 (Square)", "16:9")
+        val botRatioValues = arrayOf("1240:1080", "4:3", "1:1", "16:9")
+        val botRatioSpinner = android.widget.Spinner(this).apply {
+            adapter = android.widget.ArrayAdapter(this@MainActivity, android.R.layout.simple_spinner_dropdown_item, botRatioLabels)
+            val idx = botRatioValues.indexOf(prefs.getBottomAspectRatio()).takeIf { it >= 0 } ?: 0
+            setSelection(idx)
+        }
+        container.addView(botRatioSpinner)
+
+        // 5. App Drawers & Bottom Home Widgets
+        addSectionHeader("App Drawers & Bottom Home")
+        val cbRecentRow = CheckBox(this).apply {
+            text = "Show Recently Launched Row in App Drawers"
+            isChecked = prefs.isShowRecentRow()
+        }
         val cbClock = CheckBox(this).apply {
             text = "Show Clock & Date"
             isChecked = prefs.isShowHomeClock()
         }
         val cbPerf = CheckBox(this).apply {
-            text = "Show Performance Monitor (FPS, CPU, GPU, Battery)"
+            text = "Show Performance Monitor (CPU, GPU, RAM, Battery)"
             isChecked = prefs.isShowHomePerf()
         }
         val cbShortcuts = CheckBox(this).apply {
             text = "Show Quick Shortcuts"
             isChecked = prefs.isShowHomeShortcuts()
         }
+        container.addView(cbRecentRow)
         container.addView(cbClock)
         container.addView(cbPerf)
         container.addView(cbShortcuts)
@@ -1632,10 +1876,26 @@ class MainActivity : AppCompatActivity() {
                 }
                 prefs.setThemeMode(chosenTheme)
 
+                val chosenOrient = when {
+                    rbOrientPort.isChecked -> SimulatorPrefs.ORIENTATION_PORTRAIT
+                    rbOrientAuto.isChecked -> SimulatorPrefs.ORIENTATION_AUTO
+                    rbOrientSys.isChecked -> SimulatorPrefs.ORIENTATION_SYSTEM
+                    else -> SimulatorPrefs.ORIENTATION_LANDSCAPE
+                }
+                prefs.setOrientationMode(chosenOrient)
+                prefs.setSplitPercent(splitValues[splitSpinner.selectedItemPosition])
+                prefs.setTopAspectRatio(topRatioValues[topRatioSpinner.selectedItemPosition])
+                prefs.setBottomAspectRatio(botRatioValues[botRatioSpinner.selectedItemPosition])
+                prefs.setShowRecentRow(cbRecentRow.isChecked)
+
                 prefs.setShowHomeClock(cbClock.isChecked)
                 prefs.setShowHomePerf(cbPerf.isChecked)
                 prefs.setShowHomeShortcuts(cbShortcuts.isChecked)
 
+                applyOrientationMode()
+                applyDisplayLayout()
+                syncSurfaceMetadata()
+                refreshLauncherList()
                 applyBottomHomeWidgetVisibility()
                 applyAppTheme()
                 updateBottomHomeDashboard()

@@ -24,7 +24,17 @@ class SimulatorPrefs(context: Context) {
         const val SORT_ZA = 1
         const val SORT_RECENT = 2
 
+        const val ORIENTATION_LANDSCAPE = 0
+        const val ORIENTATION_PORTRAIT = 1
+        const val ORIENTATION_AUTO = 2
+        const val ORIENTATION_SYSTEM = 3
+
         private const val KEY_HIDDEN_PACKAGES = "hidden_packages"
+        private const val KEY_SPLIT_PERCENT = "split_percent"
+        private const val KEY_TOP_ASPECT_RATIO = "top_aspect_ratio"
+        private const val KEY_BOTTOM_ASPECT_RATIO = "bottom_aspect_ratio"
+        private const val KEY_SHOW_RECENT_ROW = "show_recent_row"
+        private const val KEY_ORIENTATION_MODE = "orientation_mode"
         private const val KEY_SHOW_ALL_APPS = "show_all_apps"
         private const val KEY_TOUCH_CONTROLS = "touch_controls_enabled"
         private const val KEY_LEFT_CONTROL_MODE = "left_control_mode"
@@ -199,5 +209,35 @@ class SimulatorPrefs(context: Context) {
             .putStringSet(KEY_DUAL_SCREEN_ADDED, added)
             .putStringSet(KEY_DUAL_SCREEN_REMOVED, removed)
             .apply()
+    }
+
+    fun getSplitPercent(): Float = prefs.getFloat(KEY_SPLIT_PERCENT, 0.53f).coerceIn(0.40f, 0.68f)
+
+    fun setSplitPercent(pct: Float) {
+        prefs.edit().putFloat(KEY_SPLIT_PERCENT, pct.coerceIn(0.40f, 0.68f)).apply()
+    }
+
+    fun getTopAspectRatio(): String = prefs.getString(KEY_TOP_ASPECT_RATIO, "16:9") ?: "16:9"
+
+    fun setTopAspectRatio(ratio: String) {
+        prefs.edit().putString(KEY_TOP_ASPECT_RATIO, ratio).apply()
+    }
+
+    fun getBottomAspectRatio(): String = prefs.getString(KEY_BOTTOM_ASPECT_RATIO, "1240:1080") ?: "1240:1080"
+
+    fun setBottomAspectRatio(ratio: String) {
+        prefs.edit().putString(KEY_BOTTOM_ASPECT_RATIO, ratio).apply()
+    }
+
+    fun isShowRecentRow(): Boolean = prefs.getBoolean(KEY_SHOW_RECENT_ROW, true)
+
+    fun setShowRecentRow(show: Boolean) {
+        prefs.edit().putBoolean(KEY_SHOW_RECENT_ROW, show).apply()
+    }
+
+    fun getOrientationMode(): Int = prefs.getInt(KEY_ORIENTATION_MODE, ORIENTATION_LANDSCAPE)
+
+    fun setOrientationMode(mode: Int) {
+        prefs.edit().putInt(KEY_ORIENTATION_MODE, mode).apply()
     }
 }
