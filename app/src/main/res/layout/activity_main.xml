@@ -578,24 +578,50 @@
             </LinearLayout>
         </ScrollView>
 
-        <!-- Floating Quick-Return Pill when a Dual-Screen App was paused by another top app -->
-        <Button
-            android:id="@+id/btnReturnDualScreen"
-            style="@style/Widget.Material3.Button"
+        <!-- Floating Quick-Return Pill + Red Dismiss X when a Dual-Screen App was paused by another top app -->
+        <LinearLayout
+            android:id="@+id/returnDualScreenBar"
             android:layout_width="wrap_content"
-            android:layout_height="38dp"
+            android:layout_height="wrap_content"
             android:layout_gravity="center"
-            android:backgroundTint="#2563EB"
             android:elevation="6dp"
-            android:insetTop="0dp"
-            android:insetBottom="0dp"
-            android:minWidth="0dp"
-            android:paddingHorizontal="16dp"
-            android:text="↩ Return to Dual-Screen App"
-            android:textColor="#FFFFFF"
-            android:textSize="12sp"
-            android:textStyle="bold"
-            android:visibility="gone" />
+            android:gravity="center_vertical"
+            android:orientation="horizontal"
+            android:visibility="gone">
+
+            <Button
+                android:id="@+id/btnReturnDualScreen"
+                style="@style/Widget.Material3.Button"
+                android:layout_width="wrap_content"
+                android:layout_height="38dp"
+                android:backgroundTint="#2563EB"
+                android:insetTop="0dp"
+                android:insetBottom="0dp"
+                android:minWidth="0dp"
+                android:paddingHorizontal="16dp"
+                android:text="↩ Return to Dual-Screen App"
+                android:textColor="#FFFFFF"
+                android:textSize="12sp"
+                android:textStyle="bold" />
+
+            <Button
+                android:id="@+id/btnDismissReturnDualScreen"
+                style="@style/Widget.Material3.Button"
+                android:layout_width="38dp"
+                android:layout_height="38dp"
+                android:layout_marginStart="8dp"
+                android:backgroundTint="#DC2626"
+                android:contentDescription="Dismiss dual-screen return"
+                android:insetTop="0dp"
+                android:insetBottom="0dp"
+                android:minWidth="0dp"
+                android:minHeight="0dp"
+                android:padding="0dp"
+                android:text="✕"
+                android:textColor="#FFFFFF"
+                android:textSize="14sp"
+                android:textStyle="bold" />
+        </LinearLayout>
 
         <!-- Bottom Screen Searchable, Folder-Enabled Icon App Launcher Overlay -->
         <LinearLayout

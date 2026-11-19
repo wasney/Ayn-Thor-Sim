@@ -198,7 +198,7 @@ class MainActivity : AppCompatActivity() {
             .daemon(false)
             .processNameSuffix("virtual_display_service")
             .debuggable(false)
-            .version(51)
+            .version(52)
     }
 
     private val serviceConnection = object : ServiceConnection {
@@ -875,24 +875,34 @@ class MainActivity : AppCompatActivity() {
         binding.btnLaunchBottom.setOnClickListener {
             val showing = binding.bottomLauncherOverlay.visibility == View.VISIBLE
             binding.bottomLauncherOverlay.visibility = if (showing) View.GONE else View.VISIBLE
+            updateReturnDualScreenVisibility()
         }
 
         binding.btnCloseBottom.setOnClickListener {
             handleBottomActionButton()
+        }
+        val dismissDualScreenReturn = {
+            pausedDualScreenApp = null
+            updateReturnDualScreenVisibility()
+            if (!hasBottomAppRunning && secondaryDisplayId > 0) {
+                ioExecutor.execute { userService?.closeTasksOnDisplay(secondaryDisplayId) }
+            }
+            updateBottomActionButton()
         }
         binding.btnReturnDualScreen.setOnClickListener {
             val target = pausedDualScreenApp
             if (target != null) {
                 launchAppOnDisplay(target, primaryDisplayId, hideLauncherAfter = true)
             } else {
-                binding.btnReturnDualScreen.visibility = View.GONE
+                dismissDualScreenReturn()
             }
         }
         binding.btnReturnDualScreen.setOnLongClickListener {
-            pausedDualScreenApp = null
-            binding.btnReturnDualScreen.visibility = View.GONE
-            Toast.makeText(this, "Dismissed quick-return button", Toast.LENGTH_SHORT).show()
+            dismissDualScreenReturn()
             true
+        }
+        binding.btnDismissReturnDualScreen.setOnClickListener {
+            dismissDualScreenReturn()
         }
         updateBottomActionButton()
 
@@ -1483,7 +1493,16 @@ class MainActivity : AppCompatActivity() {
         binding.bottomSurfaceView.layoutParams = botLp
     }
 
+    private fun updateReturnDualScreenVisibility() {
+        val shouldShow = pausedDualScreenApp != null &&
+            !hasBottomAppRunning &&
+            binding.bottomHomeOverlay.visibility != View.VISIBLE &&
+            binding.bottomLauncherOverlay.visibility != View.VISIBLE
+        binding.returnDualScreenBar.visibility = if (shouldShow) View.VISIBLE else View.GONE
+    }
+
     private fun updateBottomActionButton() {
+        updateReturnDualScreenVisibility()
         val homeVisible = binding.bottomHomeOverlay.visibility == View.VISIBLE
         if (hasBottomAppRunning) {
             binding.btnCloseBottom.setImageResource(android.R.drawable.ic_menu_close_clear_cancel)
@@ -1610,7 +1629,7 @@ class MainActivity : AppCompatActivity() {
         if (isLaunchingDualScreen) {
             lastDualScreenApp = app
             pausedDualScreenApp = null
-            binding.btnReturnDualScreen.visibility = View.GONE
+            updateReturnDualScreenVisibility()
         } else if (finalDisplayId == primaryDisplayId &&
             previousTopPackage != null &&
             previousTopPackage != app.packageName &&
@@ -1621,7 +1640,7 @@ class MainActivity : AppCompatActivity() {
             if (paused != null) {
                 pausedDualScreenApp = paused
                 binding.btnReturnDualScreen.text = "↩ Return to ${paused.label}"
-                binding.btnReturnDualScreen.visibility = View.VISIBLE
+                updateReturnDualScreenVisibility()
             }
         }
 
