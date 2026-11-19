@@ -31,6 +31,7 @@ class VirtualDisplayUserService(private val baseContext: Context) : IVirtualDisp
     companion object {
         private const val TAG = "AynThorUserService"
         private const val VIRTUAL_DISPLAY_FLAG_TRUSTED = 1 shl 10 // 1024
+        private const val VIRTUAL_DISPLAY_FLAG_OWN_FOCUS = 1 shl 14 // 16384
         private const val INJECT_INPUT_EVENT_MODE_ASYNC = 0
         private const val MAX_LOG_LINES = 300
     }
@@ -159,6 +160,14 @@ class VirtualDisplayUserService(private val baseContext: Context) : IVirtualDisp
         }
     }
 
+    private fun resolveOwnFocusFlag(): Int {
+        return try {
+            DisplayManager::class.java.getField("VIRTUAL_DISPLAY_FLAG_OWN_FOCUS").getInt(null)
+        } catch (_: Throwable) {
+            VIRTUAL_DISPLAY_FLAG_OWN_FOCUS
+        }
+    }
+
     override fun createDisplays(
         topSurface: Surface,
         topW: Int,
@@ -177,6 +186,11 @@ class VirtualDisplayUserService(private val baseContext: Context) : IVirtualDisp
         } else {
             0
         }
+        val ownFocusFlag = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            resolveOwnFocusFlag()
+        } else {
+            0
+        }
 
         val topBaseFlags = DisplayManager.VIRTUAL_DISPLAY_FLAG_PUBLIC or
             DisplayManager.VIRTUAL_DISPLAY_FLAG_OWN_CONTENT_ONLY
@@ -188,6 +202,7 @@ class VirtualDisplayUserService(private val baseContext: Context) : IVirtualDisp
             dpi = topDpi,
             surface = topSurface,
             flagCandidates = listOfNotNull(
+                if (trustedFlag != 0 && ownFocusFlag != 0) topBaseFlags or trustedFlag or ownFocusFlag else null,
                 if (trustedFlag != 0) topBaseFlags or trustedFlag else null,
                 topBaseFlags,
                 DisplayManager.VIRTUAL_DISPLAY_FLAG_OWN_CONTENT_ONLY
@@ -317,9 +332,9 @@ class VirtualDisplayUserService(private val baseContext: Context) : IVirtualDisp
     private fun pokeDisplayFocus(displayId: Int) {
         if (displayId <= 0) return
         val now = android.os.SystemClock.uptimeMillis()
-        val ids = intArrayOf(99)
-        val xs = floatArrayOf(1f)
-        val ys = floatArrayOf(1f)
+        val ids = intArrayOf(0)
+        val xs = floatArrayOf(50f)
+        val ys = floatArrayOf(50f)
         val ps = floatArrayOf(1f)
         injectTouchEvent(displayId, MotionEvent.ACTION_DOWN, now, now, 1, ids, xs, ys, ps)
         injectTouchEvent(displayId, MotionEvent.ACTION_CANCEL, now, now + 1L, 1, ids, xs, ys, floatArrayOf(0f))
