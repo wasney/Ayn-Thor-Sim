@@ -92,6 +92,7 @@ class VirtualDpadView @JvmOverloads constructor(
     override fun onTouchEvent(event: MotionEvent): Boolean {
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN, MotionEvent.ACTION_POINTER_DOWN -> {
+                parent?.requestDisallowInterceptTouchEvent(true)
                 if (activePointerId == MotionEvent.INVALID_POINTER_ID) {
                     val idx = event.actionIndex
                     activePointerId = event.getPointerId(idx)
@@ -218,6 +219,7 @@ class VirtualThumbstickView @JvmOverloads constructor(
 
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN, MotionEvent.ACTION_POINTER_DOWN -> {
+                parent?.requestDisallowInterceptTouchEvent(true)
                 if (activePointerId == MotionEvent.INVALID_POINTER_ID) {
                     val idx = event.actionIndex
                     activePointerId = event.getPointerId(idx)
@@ -347,9 +349,10 @@ class VirtualFaceButtonsView @JvmOverloads constructor(
     override fun onTouchEvent(event: MotionEvent): Boolean {
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN, MotionEvent.ACTION_POINTER_DOWN -> {
+                parent?.requestDisallowInterceptTouchEvent(true)
                 val idx = event.actionIndex
                 val pid = event.getPointerId(idx)
-                val hit = findButtonAt(event.getX(idx), event.getY(idx))
+                val hit = findButtonAt(event.getX(idx), event.getY(idx), 1.85f)
                 if (hit != null) {
                     pointerToKey[pid] = hit.keyCode
                     recomputeActiveKeys()
@@ -358,7 +361,14 @@ class VirtualFaceButtonsView @JvmOverloads constructor(
             MotionEvent.ACTION_MOVE -> {
                 for (i in 0 until event.pointerCount) {
                     val pid = event.getPointerId(i)
-                    val hit = findButtonAt(event.getX(i), event.getY(i))
+                    val currentKey = pointerToKey[pid]
+                    if (currentKey != null) {
+                        val currentBtn = buttons.firstOrNull { it.keyCode == currentKey }
+                        if (currentBtn != null && hypot(event.getX(i) - currentBtn.cx, event.getY(i) - currentBtn.cy) <= currentBtn.radius * 2.4f) {
+                            continue
+                        }
+                    }
+                    val hit = findButtonAt(event.getX(i), event.getY(i), 1.85f)
                     if (hit != null) {
                         pointerToKey[pid] = hit.keyCode
                     } else {
@@ -380,8 +390,10 @@ class VirtualFaceButtonsView @JvmOverloads constructor(
         return true
     }
 
-    private fun findButtonAt(x: Float, y: Float): FaceBtn? {
-        return buttons.firstOrNull { hypot(x - it.cx, y - it.cy) <= it.radius * 1.35f }
+    private fun findButtonAt(x: Float, y: Float, multiplier: Float = 1.85f): FaceBtn? {
+        return buttons
+            .filter { hypot(x - it.cx, y - it.cy) <= it.radius * multiplier }
+            .minByOrNull { hypot(x - it.cx, y - it.cy) }
     }
 
     private fun recomputeActiveKeys() {
@@ -447,6 +459,7 @@ class VirtualButtonView @JvmOverloads constructor(
     override fun onTouchEvent(event: MotionEvent): Boolean {
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN, MotionEvent.ACTION_POINTER_DOWN -> {
+                parent?.requestDisallowInterceptTouchEvent(true)
                 if (activePointerId == MotionEvent.INVALID_POINTER_ID) {
                     activePointerId = event.getPointerId(event.actionIndex)
                     setPressedState(true)

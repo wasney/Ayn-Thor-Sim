@@ -320,8 +320,9 @@
 
             <com.aynthor.simulator.input.VirtualButtonView
                 android:id="@+id/btnSelect"
-                android:layout_width="96dp"
-                android:layout_height="32dp" />
+                android:layout_width="108dp"
+                android:layout_height="38dp"
+                android:layout_marginBottom="8dp" />
         </LinearLayout>
     </LinearLayout>
 
@@ -439,8 +440,9 @@
 
             <com.aynthor.simulator.input.VirtualButtonView
                 android:id="@+id/btnStart"
-                android:layout_width="96dp"
-                android:layout_height="32dp" />
+                android:layout_width="108dp"
+                android:layout_height="38dp"
+                android:layout_marginBottom="8dp" />
         </LinearLayout>
     </LinearLayout>
 

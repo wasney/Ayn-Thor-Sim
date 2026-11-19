@@ -368,6 +368,12 @@ class VirtualDisplayUserService(private val baseContext: Context) : IVirtualDisp
         if (displayId <= 0) return
         try {
             val effectiveSource = if (source != 0) source else (InputDevice.SOURCE_GAMEPAD or InputDevice.SOURCE_DPAD)
+            val gamepadDevId = InputDevice.getDeviceIds().firstOrNull { id ->
+                val dev = InputDevice.getDevice(id)
+                dev != null && !dev.isVirtual &&
+                    ((dev.sources and InputDevice.SOURCE_GAMEPAD) == InputDevice.SOURCE_GAMEPAD ||
+                     (dev.sources and InputDevice.SOURCE_JOYSTICK) == InputDevice.SOURCE_JOYSTICK)
+            } ?: 0
             val event = KeyEvent(
                 downTime,
                 eventTime,
@@ -375,7 +381,7 @@ class VirtualDisplayUserService(private val baseContext: Context) : IVirtualDisp
                 keyCode,
                 repeatCount,
                 metaState,
-                0,
+                gamepadDevId,
                 linuxScanCodeForKey(keyCode),
                 KeyEvent.FLAG_FROM_SYSTEM,
                 effectiveSource
@@ -458,6 +464,7 @@ class VirtualDisplayUserService(private val baseContext: Context) : IVirtualDisp
         }
     }
 
+    @Synchronized
     private fun injectEvent(event: InputEvent) {
         try {
             injectInputEventMethod?.invoke(inputManager, event, INJECT_INPUT_EVENT_MODE_ASYNC)

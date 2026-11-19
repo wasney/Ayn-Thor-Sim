@@ -155,6 +155,11 @@ class MainActivity : AppCompatActivity() {
         inputManager = getSystemService(Context.INPUT_SERVICE) as InputManager
 
         setupFullscreen()
+        binding.root.addOnLayoutChangeListener { v, _, _, _, _, _, _, _, _ ->
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+                v.systemGestureExclusionRects = listOf(android.graphics.Rect(0, 0, v.width, v.height))
+            }
+        }
         setupSurfaces()
         setupLauncher()
         setupUtilityBar()
