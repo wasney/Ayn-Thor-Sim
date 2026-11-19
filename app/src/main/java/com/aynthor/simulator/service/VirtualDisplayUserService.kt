@@ -440,7 +440,7 @@ class VirtualDisplayUserService(private val baseContext: Context) : IVirtualDisp
             )
             val devId = uinputGamepad.getDeviceId().takeIf { it > 0 } ?: 0
             event = MotionEvent.obtain(
-                downTime,
+                eventTime,
                 eventTime,
                 MotionEvent.ACTION_MOVE,
                 1,
@@ -659,7 +659,7 @@ class VirtualDisplayUserService(private val baseContext: Context) : IVirtualDisp
     }
 
     override fun getDebugLog(): String {
-        return logLines.joinToString("\n")
+        return uinputGamepad.statusSummary + "\n" + logLines.joinToString("\n")
     }
 
     override fun destroy() {

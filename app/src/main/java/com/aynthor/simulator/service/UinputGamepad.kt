@@ -51,6 +51,8 @@ class UinputGamepad(private val logger: (String) -> Unit) {
         private set
     @Volatile private var hasError: Boolean = false
     @Volatile private var cachedDeviceId: Int = -1
+    @Volatile var statusSummary: String = "uinput: not started"
+        private set
 
     private var dpadU = false
     private var dpadD = false
@@ -121,9 +123,11 @@ class UinputGamepad(private val logger: (String) -> Unit) {
                 isActive = true
                 cachedDeviceId = resolvedId
                 val dev = if (resolvedId > 0) InputDevice.getDevice(resolvedId) else null
+                val devName = dev?.name ?: "null"
                 val srcHex = dev?.let { "0x" + Integer.toHexString(it.sources) } ?: "none"
                 val ranges = dev?.motionRanges?.size ?: 0
-                logger("uinput Xbox 360 controller registered ($DEVICE_NAME, deviceId=$cachedDeviceId, src=$srcHex, ranges=$ranges)")
+                statusSummary = "uinput: dev=$cachedDeviceId ($devName), src=$srcHex, ranges=$ranges"
+                logger("uinput Xbox 360 controller registered ($devName, deviceId=$cachedDeviceId, src=$srcHex, ranges=$ranges)")
                 true
             } else {
                 logger("uinput registration failed (alive=${proc.isAlive}, hasError=$hasError); using InputManager fallback")
