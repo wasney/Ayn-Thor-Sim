@@ -487,7 +487,7 @@ class MainActivity : AppCompatActivity() {
                 val name = input.text.toString().trim()
                 if (name.isNotEmpty()) {
                     prefs.addFolder(name)
-                    Toast.makeText(this, "Folder "$name" created. Long-press any app to add it.", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(this, "Folder '$name' created. Long-press any app to add it.", Toast.LENGTH_SHORT).show()
                 }
             }
             .setNegativeButton("Cancel", null)
@@ -1425,7 +1425,7 @@ class MainActivity : AppCompatActivity() {
     private fun showManageFoldersDialog() {
         val folders = prefs.getFolders()
         val items = mutableListOf("+ Create New Folder")
-        items.addAll(folders.map { "Delete "$it"" })
+        items.addAll(folders.map { "Delete '$it'" })
         AlertDialog.Builder(this)
             .setTitle("Manage Folders")
             .setItems(items.toTypedArray()) { _, which ->
@@ -1438,7 +1438,7 @@ class MainActivity : AppCompatActivity() {
                     if (selectedBottomFolder == toDelete) selectedBottomFolder = null
                     updateDrawerFilterButtons()
                     refreshLauncherList()
-                    Toast.makeText(this, "Deleted folder "$toDelete"", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(this, "Deleted folder '$toDelete'", Toast.LENGTH_SHORT).show()
                 }
             }
             .setNegativeButton("Close", null)
