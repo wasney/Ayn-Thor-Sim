@@ -121,7 +121,7 @@ class VirtualDpadView @JvmOverloads constructor(
         val cy = height / 2f
         val dx = x - cx
         val dy = y - cy
-        val deadzone = minOf(width, height) * 0.10f
+        val deadzone = minOf(width, height) * 0.06f
         if (hypot(dx, dy) < deadzone) {
             setDirections(false, false, false, false)
             return

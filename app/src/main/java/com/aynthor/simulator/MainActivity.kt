@@ -77,6 +77,8 @@ class MainActivity : AppCompatActivity() {
     @Volatile private var rightStickY = 0f
     @Volatile private var hatX = 0f
     @Volatile private var hatY = 0f
+    @Volatile private var lTrigger = 0f
+    @Volatile private var rTrigger = 0f
     private val keyDownTimes = mutableMapOf<Int, Long>()
     private val localLogs = mutableListOf<String>()
 
@@ -509,6 +511,8 @@ class MainActivity : AppCompatActivity() {
             KeyEvent.KEYCODE_DPAD_RIGHT -> hatX = if (isDown) 1f else if (hatX > 0f) 0f else hatX
             KeyEvent.KEYCODE_DPAD_UP -> hatY = if (isDown) -1f else if (hatY < 0f) 0f else hatY
             KeyEvent.KEYCODE_DPAD_DOWN -> hatY = if (isDown) 1f else if (hatY > 0f) 0f else hatY
+            KeyEvent.KEYCODE_BUTTON_L2 -> lTrigger = if (isDown) 1f else 0f
+            KeyEvent.KEYCODE_BUTTON_R2 -> rTrigger = if (isDown) 1f else 0f
         }
 
         val source = if (keyCode in KeyEvent.KEYCODE_DPAD_UP..KeyEvent.KEYCODE_DPAD_RIGHT) {
@@ -532,11 +536,14 @@ class MainActivity : AppCompatActivity() {
                 0,
                 source
             )
-            if (keyCode in KeyEvent.KEYCODE_DPAD_UP..KeyEvent.KEYCODE_DPAD_RIGHT) {
+            if (keyCode in KeyEvent.KEYCODE_DPAD_UP..KeyEvent.KEYCODE_DPAD_RIGHT ||
+                keyCode == KeyEvent.KEYCODE_BUTTON_L2 ||
+                keyCode == KeyEvent.KEYCODE_BUTTON_R2
+            ) {
                 userService?.injectJoystickEvent(
                     targetId, now, now,
                     leftStickX, leftStickY, rightStickX, rightStickY,
-                    0f, 0f, hatX, hatY
+                    lTrigger, rTrigger, hatX, hatY
                 )
             }
         }
@@ -562,8 +569,8 @@ class MainActivity : AppCompatActivity() {
                 leftStickY,
                 rightStickX,
                 rightStickY,
-                0f,
-                0f,
+                lTrigger,
+                rTrigger,
                 hatX,
                 hatY
             )

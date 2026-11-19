@@ -382,8 +382,8 @@ class VirtualDisplayUserService(private val baseContext: Context) : IVirtualDisp
                 repeatCount,
                 metaState,
                 gamepadDevId,
-                linuxScanCodeForKey(keyCode),
-                KeyEvent.FLAG_FROM_SYSTEM,
+                0,
+                0,
                 effectiveSource
             )
             applyDisplayId(event, displayId)
