@@ -662,7 +662,8 @@ class VirtualDisplayUserService(private val baseContext: Context) : IVirtualDisp
                 "am", "start",
                 "--display", displayId.toString(),
                 "-n", component,
-                "--activity-single-top"
+                "--activity-single-top",
+                "--activity-reorder-to-front"
             ).redirectErrorStream(true).start()
             val exitCode = process.waitFor()
             invalidateFocusCache()

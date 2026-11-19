@@ -394,6 +394,8 @@ class SettingsSheetController(
         }
     }
 
+    private var lastRenderedWidePane: Boolean? = null
+
     fun updateSheetHeight(rootHeightPx: Int) {
         if (rootHeightPx <= 0) return
         val desired = (rootHeightPx * 0.56f).roundToInt().coerceIn(dp(320), dp(560))
@@ -401,6 +403,10 @@ class SettingsSheetController(
         if (lp.height != desired) {
             lp.height = desired
             sheetContainer.layoutParams = lp
+        }
+        val wideNow = isWidePane()
+        if (overlayRoot.visibility == View.VISIBLE && lastRenderedWidePane != null && lastRenderedWidePane != wideNow) {
+            renderActiveTab()
         }
     }
 
@@ -582,6 +588,7 @@ class SettingsSheetController(
     }
 
     private fun renderActiveTab() {
+        lastRenderedWidePane = isWidePane()
         contentContainer.removeAllViews()
         when (activeTab) {
             Tab.DISPLAY -> buildDisplayTab()
@@ -683,13 +690,22 @@ class SettingsSheetController(
                 text = "$pct%"
                 textSize = 11.5f
                 gravity = Gravity.CENTER
-                layoutParams = LinearLayout.LayoutParams(0, dp(30), 1f).apply {
+                layoutParams = LinearLayout.LayoutParams(0, dp(36), 1f).apply {
                     marginEnd = if (pct != presets.last()) dp(6) else 0
                 }
                 isClickable = true
                 isFocusable = true
                 setOnClickListener {
-                    splitSlider.value = pct.toFloat()
+                    val target = pct.toFloat()
+                    if (abs(splitSlider.value - target) > 0.001f) {
+                        splitSlider.value = target
+                    } else {
+                        tvSplitDesc.text = "Top $pct%  •  Bottom ${100 - pct}%"
+                        tvSplitBadge.text = "$pct%"
+                        updatePresetHighlight(pct)
+                        prefs.setSplitPercent(pct / 100f)
+                        callbacks.onDisplaySettingsChanged(orientationChanged = false)
+                    }
                 }
             }
             presetViews[pct] = chip
@@ -1139,7 +1155,7 @@ class SettingsSheetController(
             setPadding(dp(3), dp(3), dp(3), dp(3))
             layoutParams = LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
-                dp(38)
+                dp(40)
             )
         }
 
@@ -1211,10 +1227,8 @@ class SettingsSheetController(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT
             )
-            addOnChangeListener { _, value, fromUser ->
-                if (fromUser || abs(value - snapped) > 0.001f) {
-                    onChange(value)
-                }
+            addOnChangeListener { _, value, _ ->
+                onChange(value)
             }
         }
     }

@@ -196,7 +196,7 @@ class MainActivity : AppCompatActivity() {
             .daemon(false)
             .processNameSuffix("virtual_display_service")
             .debuggable(false)
-            .version(49)
+            .version(50)
     }
 
     private val serviceConnection = object : ServiceConnection {
@@ -1654,47 +1654,64 @@ class MainActivity : AppCompatActivity() {
         updateBottomActionButton()
         refreshLauncherList()
 
-        var launched = false
-        try {
-            val intent = Intent(Intent.ACTION_MAIN).apply {
-                addCategory(Intent.CATEGORY_LAUNCHER)
-                component = ComponentName(app.packageName, app.activityName)
-                // Use FLAG_ACTIVITY_NEW_TASK (without MULTIPLE_TASK) so re-selecting a paused
-                // app like SeedlessDS resumes the existing game cleanly instead of spawning a duplicate.
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        // Prefer Shizuku shell-privileged launch (am start --display) first:
+        // Android 16+ Background Activity Launch (BAL) can silently drop startActivity() from
+        // Display 0 when MainActivity uses FLAG_NOT_FOCUSABLE or when switching between apps
+        // already focused on the virtual display. Fall back to startActivity() only if needed.
+        val service = userService
+        if (service != null) {
+            if (hideLauncherAfter || isLaunchingDualScreen || redirectedToTopFromDualScreen) {
+                binding.etTopSearch.clearFocus()
+                binding.launcherOverlay.visibility = View.GONE
             }
-            val options = ActivityOptions.makeBasic().setLaunchDisplayId(finalDisplayId)
-            startActivity(intent, options.toBundle())
-            launched = true
-        } catch (_: Throwable) {
-            launched = false
-        }
-
-        if (!launched) {
             ioExecutor.execute {
-                val ok = userService?.launchAppOnDisplay(app.packageName, app.activityName, finalDisplayId) == true
-                runOnUiThread {
-                    if (ok) {
+                val ok = try {
+                    service.launchAppOnDisplay(app.packageName, app.activityName, finalDisplayId)
+                } catch (_: Throwable) {
+                    false
+                }
+                if (ok) {
+                    try { Thread.sleep(180L) } catch (_: InterruptedException) {}
+                    try { service.focusDisplay(-finalDisplayId) } catch (_: Throwable) {}
+                    runOnUiThread {
                         addLocalLog("Launched ${app.packageName} on display $finalDisplayId (via service)")
-                        if (hideLauncherAfter || isLaunchingDualScreen || redirectedToTopFromDualScreen) {
-                            binding.etTopSearch.clearFocus(); binding.launcherOverlay.visibility = View.GONE
-                        }
                         if (redirectedToTopFromDualScreen) {
                             Toast.makeText(this, "Opened ${app.label} on top (paused dual-screen app)", Toast.LENGTH_SHORT).show()
                         }
-                    } else {
-                        Toast.makeText(this, "Failed to launch ${app.label}", Toast.LENGTH_SHORT).show()
+                    }
+                } else {
+                    runOnUiThread {
+                        try {
+                            val intent = Intent(Intent.ACTION_MAIN).apply {
+                                addCategory(Intent.CATEGORY_LAUNCHER)
+                                component = ComponentName(app.packageName, app.activityName)
+                                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)
+                            }
+                            val options = ActivityOptions.makeBasic().setLaunchDisplayId(finalDisplayId)
+                            startActivity(intent, options.toBundle())
+                            addLocalLog("Launched ${app.packageName} on display $finalDisplayId (fallback)")
+                            binding.root.postDelayed({ ioExecutor.execute { userService?.focusDisplay(-finalDisplayId) } }, 450L)
+                        } catch (_: Throwable) {
+                            Toast.makeText(this, "Failed to launch ${app.label}", Toast.LENGTH_SHORT).show()
+                        }
                     }
                 }
             }
         } else {
-            addLocalLog("Launched ${app.packageName} on display $finalDisplayId")
-            binding.root.postDelayed({ ioExecutor.execute { userService?.focusDisplay(-finalDisplayId) } }, 450L)
-            if (hideLauncherAfter || isLaunchingDualScreen || redirectedToTopFromDualScreen) {
-                binding.etTopSearch.clearFocus(); binding.launcherOverlay.visibility = View.GONE
-            }
-            if (redirectedToTopFromDualScreen) {
-                Toast.makeText(this, "Opened ${app.label} on top (paused dual-screen app)", Toast.LENGTH_SHORT).show()
+            try {
+                val intent = Intent(Intent.ACTION_MAIN).apply {
+                    addCategory(Intent.CATEGORY_LAUNCHER)
+                    component = ComponentName(app.packageName, app.activityName)
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)
+                }
+                val options = ActivityOptions.makeBasic().setLaunchDisplayId(finalDisplayId)
+                startActivity(intent, options.toBundle())
+                addLocalLog("Launched ${app.packageName} on display $finalDisplayId")
+                if (hideLauncherAfter || isLaunchingDualScreen || redirectedToTopFromDualScreen) {
+                    binding.etTopSearch.clearFocus(); binding.launcherOverlay.visibility = View.GONE
+                }
+            } catch (_: Throwable) {
+                Toast.makeText(this, "Failed to launch ${app.label}", Toast.LENGTH_SHORT).show()
             }
         }
     }
