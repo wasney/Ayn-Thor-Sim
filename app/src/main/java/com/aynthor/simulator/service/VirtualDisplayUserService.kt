@@ -82,7 +82,6 @@ class VirtualDisplayUserService(private val baseContext: Context) : IVirtualDisp
     }
 
     private var topDisplay: VirtualDisplay? = null
-    private val uinputGamepad = UinputGamepad { msg -> log(msg) }
     private var lastStickLogTime = 0L
     private var bottomDisplay: VirtualDisplay? = null
 
@@ -204,7 +203,6 @@ class VirtualDisplayUserService(private val baseContext: Context) : IVirtualDisp
             )
         )
 
-        uinputGamepad.start()
         val topId = topDisplay?.display?.displayId ?: -1
         val bottomId = bottomDisplay?.display?.displayId ?: -1
         log("createDisplays result: topId=$topId, bottomId=$bottomId")
@@ -372,7 +370,6 @@ class VirtualDisplayUserService(private val baseContext: Context) : IVirtualDisp
         if (displayId <= 0) return
         try {
             val effectiveSource = if (source != 0) source else (InputDevice.SOURCE_GAMEPAD or InputDevice.SOURCE_DPAD)
-            val devId = uinputGamepad.getDeviceId().takeIf { it > 0 } ?: -1
             val event = KeyEvent(
                 downTime,
                 eventTime,
@@ -380,7 +377,7 @@ class VirtualDisplayUserService(private val baseContext: Context) : IVirtualDisp
                 keyCode,
                 repeatCount,
                 metaState,
-                devId,
+                -1,
                 0,
                 0,
                 effectiveSource
@@ -438,7 +435,6 @@ class VirtualDisplayUserService(private val baseContext: Context) : IVirtualDisp
                     setAxisValue(MotionEvent.AXIS_HAT_Y, axisHatY)
                 }
             )
-            val devId = uinputGamepad.getDeviceId().takeIf { it > 0 } ?: 0
             event = MotionEvent.obtain(
                 eventTime,
                 eventTime,
@@ -450,7 +446,7 @@ class VirtualDisplayUserService(private val baseContext: Context) : IVirtualDisp
                 0,
                 1.0f,
                 1.0f,
-                devId,
+                0,
                 0,
                 InputDevice.SOURCE_JOYSTICK,
                 0
@@ -462,8 +458,8 @@ class VirtualDisplayUserService(private val baseContext: Context) : IVirtualDisp
             if (ok != true || isZero || nowMs - lastStickLogTime >= 150L) {
                 lastStickLogTime = nowMs
                 log(
-                    "injectJoy(lx=%.2f, ly=%.2f, rx=%.2f, ry=%.2f, dev=%d, disp=%d) -> %s".format(
-                        Locale.US, axisX, axisY, axisZ, axisRz, devId, displayId, ok
+                    "injectJoy(lx=%.2f, ly=%.2f, rx=%.2f, ry=%.2f, disp=%d) -> %s".format(
+                        Locale.US, axisX, axisY, axisZ, axisRz, displayId, ok
                     )
                 )
             }
@@ -525,7 +521,6 @@ class VirtualDisplayUserService(private val baseContext: Context) : IVirtualDisp
     }
 
     override fun releaseDisplays() {
-        uinputGamepad.stop()
         try {
             topDisplay?.release()
         } catch (_: Throwable) {
@@ -659,7 +654,7 @@ class VirtualDisplayUserService(private val baseContext: Context) : IVirtualDisp
     }
 
     override fun getDebugLog(): String {
-        return uinputGamepad.statusSummary + "\n" + logLines.joinToString("\n")
+        return logLines.joinToString("\n")
     }
 
     override fun destroy() {
