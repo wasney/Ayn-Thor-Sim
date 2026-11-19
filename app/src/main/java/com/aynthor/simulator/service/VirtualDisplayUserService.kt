@@ -478,15 +478,10 @@ class VirtualDisplayUserService(private val baseContext: Context) : IVirtualDisp
         // Android's InputManager.injectInputEvent 5000ms stalls on Samsung SDK 37!
         if (useKernelUinput && uinputGamepad.isActive) {
             val isDown = action == KeyEvent.ACTION_DOWN
-            if (isDown) {
-                val nowMs = System.currentTimeMillis()
-                if (nowMs - lastFocusTimeMs >= 250L) {
-                    lastFocusTimeMs = nowMs
-                    ensureFocusedCached(displayId)
-                    // Give WindowManager ~8ms to finish switching focus from Display 0 on the
-                    // first tap after a pause so the very first key press never lands early.
-                    try { Thread.sleep(8L) } catch (_: Throwable) {}
-                }
+            // Because MainActivity uses FLAG_NOT_FOCUSABLE during gameplay, the game display
+            // retains permanent focus and never needs repeated setFocusedRootTask calls or sleeps.
+            if (isDown && cachedFocusDisplayId != displayId) {
+                ensureFocusedCached(displayId)
             }
             val ok = uinputGamepad.sendKey(keyCode, isDown)
             if (ok) {

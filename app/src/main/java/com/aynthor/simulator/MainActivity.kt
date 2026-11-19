@@ -33,6 +33,7 @@ import android.os.IBinder
 import android.os.SystemClock
 import android.view.InputDevice
 import android.view.Gravity
+import android.view.WindowManager
 import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.SurfaceHolder
@@ -147,6 +148,7 @@ class MainActivity : AppCompatActivity() {
     private var selectedBottomFolder: String? = null
     private var lastLauncherStickNavMs = 0L
     private var isLightThemeActive = false
+    private var isWindowNotFocusable = false
     private val uiHandler = Handler(Looper.getMainLooper())
     private val clockFormat = SimpleDateFormat("h:mm a", Locale.getDefault())
     private val dateFormat = SimpleDateFormat("EEE, MMM d", Locale.getDefault())
@@ -191,7 +193,7 @@ class MainActivity : AppCompatActivity() {
             .daemon(false)
             .processNameSuffix("virtual_display_service")
             .debuggable(false)
-            .version(46)
+            .version(47)
     }
 
     private val serviceConnection = object : ServiceConnection {
@@ -268,6 +270,10 @@ class MainActivity : AppCompatActivity() {
         applyOrientationMode()
         applyDisplayLayout()
         updatePhysicalControllerState()
+        binding.root.viewTreeObserver.addOnGlobalLayoutListener {
+            updateWindowFocusability()
+        }
+        updateWindowFocusability()
         uiHandler.post(homeRefreshRunnable)
 
         Shizuku.addBinderReceivedListenerSticky(binderReceivedListener)
@@ -375,6 +381,30 @@ class MainActivity : AppCompatActivity() {
         binding.bottomScreenContainer.layoutParams = botLp
         binding.leftSidebar.layoutParams = leftLp
         binding.rightSidebar.layoutParams = rightLp
+    }
+
+    /**
+     * Prevents Display 0 (MainActivity) from stealing key/gamepad focus from the game on
+     * primaryDisplayId when the user taps virtual gamepad buttons — matching how native
+     * dual-screen overlays keep input focus permanently locked to the game window.
+     * Automatically clears FLAG_NOT_FOCUSABLE whenever an app drawer or Shizuku overlay is visible
+     * so search boxes and controller drawer navigation still receive keyboard/key focus.
+     */
+    private fun updateWindowFocusability() {
+        val needsFocus = binding.launcherOverlay.visibility == View.VISIBLE ||
+            binding.bottomLauncherOverlay.visibility == View.VISIBLE ||
+            binding.shizukuOverlay.visibility == View.VISIBLE
+        val shouldBeNotFocusable = !needsFocus
+        if (shouldBeNotFocusable == isWindowNotFocusable) return
+        isWindowNotFocusable = shouldBeNotFocusable
+        if (shouldBeNotFocusable) {
+            window.addFlags(WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE)
+            if (primaryDisplayId > 0) {
+                ioExecutor.execute { userService?.focusDisplay(primaryDisplayId) }
+            }
+        } else {
+            window.clearFlags(WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE)
+        }
     }
 
     private fun setupFullscreen() {
