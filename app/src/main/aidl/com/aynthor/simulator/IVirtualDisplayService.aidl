@@ -69,4 +69,6 @@ interface IVirtualDisplayService {
     boolean closeTasksOnDisplay(int displayId) = 11;
 
     oneway void focusDisplay(int displayId) = 12;
+
+    void registerClientDeathToken(IBinder token) = 13;
 }

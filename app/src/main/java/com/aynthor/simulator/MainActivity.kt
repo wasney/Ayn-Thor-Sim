@@ -53,6 +53,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var bottomLauncherAdapter: AppLauncherAdapter
     private var lastBottomPackage: String? = null
 
+    private val clientDeathToken = android.os.Binder()
     private val ioExecutor = Executors.newSingleThreadExecutor()
     private val inputExecutor = Executors.newSingleThreadExecutor()
     private val joystickRunning = AtomicBoolean(false)
@@ -104,12 +105,13 @@ class MainActivity : AppCompatActivity() {
             .daemon(false)
             .processNameSuffix("virtual_display_service")
             .debuggable(false)
-            .version(14)
+            .version(15)
     }
 
     private val serviceConnection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName?, binder: IBinder?) {
             userService = IVirtualDisplayService.Stub.asInterface(binder)
+            try { userService?.registerClientDeathToken(clientDeathToken) } catch (_: Throwable) {}
             isServiceBound = true
             tryCreateVirtualDisplays()
         }
@@ -473,7 +475,7 @@ class MainActivity : AppCompatActivity() {
         var found = false
         for (id in ids) {
             val dev = InputDevice.getDevice(id) ?: continue
-            if (dev.isVirtual) continue
+            if (dev.isVirtual || dev.name == "AYN Thor Virtual Stick") continue
             val sources = dev.sources
             val isGamepad = (sources and InputDevice.SOURCE_GAMEPAD) == InputDevice.SOURCE_GAMEPAD ||
                 (sources and InputDevice.SOURCE_JOYSTICK) == InputDevice.SOURCE_JOYSTICK
@@ -637,6 +639,7 @@ class MainActivity : AppCompatActivity() {
         val isJoystick = (event.source and InputDevice.SOURCE_JOYSTICK) == InputDevice.SOURCE_JOYSTICK ||
             (event.source and InputDevice.SOURCE_GAMEPAD) == InputDevice.SOURCE_GAMEPAD
 
+        if (event.device?.name == "AYN Thor Virtual Stick") return false
         if (isJoystick && binding.launcherOverlay.visibility != View.VISIBLE) {
             val targetId = primaryDisplayId
             if (targetId > 0) {

@@ -9,6 +9,7 @@ import android.hardware.display.VirtualDisplay
 import android.hardware.display.VirtualDisplayConfig
 import android.hardware.input.InputManager
 import android.os.Build
+import android.os.IBinder
 import android.os.Process
 import android.util.Log
 import android.view.InputDevice
@@ -81,6 +82,7 @@ class VirtualDisplayUserService(private val baseContext: Context) : IVirtualDisp
     }
 
     private var topDisplay: VirtualDisplay? = null
+    private val uhidStick = UhidGamepad { msg -> log(msg) }
     private var lastStickLogTime = 0L
     private var bottomDisplay: VirtualDisplay? = null
 
@@ -202,6 +204,7 @@ class VirtualDisplayUserService(private val baseContext: Context) : IVirtualDisp
             )
         )
 
+        uhidStick.open()
         val topId = topDisplay?.display?.displayId ?: -1
         val bottomId = bottomDisplay?.display?.displayId ?: -1
         log("createDisplays result: topId=$topId, bottomId=$bottomId")
@@ -388,6 +391,17 @@ class VirtualDisplayUserService(private val baseContext: Context) : IVirtualDisp
         }
     }
 
+    override fun registerClientDeathToken(token: IBinder?) {
+        try {
+            token?.linkToDeath({
+                log("Client app died; tearing down displays and UHID")
+                destroy()
+            }, 0)
+        } catch (e: Throwable) {
+            log("linkToDeath failed", e)
+        }
+    }
+
     override fun injectJoystickEvent(
         displayId: Int,
         downTime: Long,
@@ -402,6 +416,9 @@ class VirtualDisplayUserService(private val baseContext: Context) : IVirtualDisp
         axisHatY: Float
     ) {
         if (displayId <= 0) return
+        if (uhidStick.isOpen) {
+            uhidStick.updateAxes(axisX, axisY, axisZ, axisRz)
+        }
         var event: MotionEvent? = null
         try {
             val properties = arrayOf(
@@ -504,6 +521,7 @@ class VirtualDisplayUserService(private val baseContext: Context) : IVirtualDisp
     }
 
     override fun releaseDisplays() {
+        uhidStick.close()
         try {
             topDisplay?.release()
         } catch (_: Throwable) {

@@ -241,13 +241,10 @@ class VirtualThumbstickView @JvmOverloads constructor(
                 if (activePointerId == MotionEvent.INVALID_POINTER_ID) {
                     val idx = event.actionIndex
                     activePointerId = event.getPointerId(idx)
-                    // Floating origin: wherever the user taps becomes the center (0, 0)
-                    anchorX = event.getX(idx)
-                    anchorY = event.getY(idx)
-                    knobX = anchorX
-                    knobY = anchorY
-                    emitIfChanged(0f, 0f)
-                    invalidate()
+                    // Locked-in-place center
+                    anchorX = width / 2f
+                    anchorY = height / 2f
+                    updateStick(event.getX(idx), event.getY(idx), maxDist)
                 }
             }
             MotionEvent.ACTION_MOVE -> {
