@@ -59,7 +59,9 @@ import com.aynthor.simulator.databinding.ActivityMainBinding
 import com.aynthor.simulator.launcher.AppInfo
 import com.aynthor.simulator.launcher.AppLauncherAdapter
 import com.aynthor.simulator.launcher.AppRepository
+import androidx.activity.OnBackPressedCallback
 import com.aynthor.simulator.prefs.SimulatorPrefs
+import com.aynthor.simulator.ui.SettingsSheetController
 import com.aynthor.simulator.service.VirtualDisplayUserService
 import rikka.shizuku.Shizuku
 import java.util.concurrent.Executors
@@ -78,6 +80,7 @@ class MainActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityMainBinding
     private lateinit var prefs: SimulatorPrefs
+    private lateinit var settingsSheet: SettingsSheetController
     private lateinit var inputManager: InputManager
     private lateinit var launcherAdapter: AppLauncherAdapter
     private lateinit var bottomLauncherAdapter: AppLauncherAdapter
@@ -193,7 +196,7 @@ class MainActivity : AppCompatActivity() {
             .daemon(false)
             .processNameSuffix("virtual_display_service")
             .debuggable(false)
-            .version(48)
+            .version(49)
     }
 
     private val serviceConnection = object : ServiceConnection {
@@ -260,12 +263,27 @@ class MainActivity : AppCompatActivity() {
             if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
                 v.systemGestureExclusionRects = listOf(android.graphics.Rect(0, 0, v.width, v.height))
             }
+            if (::settingsSheet.isInitialized && v.height > 0) {
+                settingsSheet.updateSheetHeight(v.height)
+            }
         }
         setupSurfaces()
         setupLauncher()
         setupUtilityBar()
         setupBottomHomeScreen()
         setupVirtualGamepad()
+        setupSettingsSheet()
+        onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
+            override fun handleOnBackPressed() {
+                if (::settingsSheet.isInitialized && settingsSheet.isVisible) {
+                    settingsSheet.dismiss()
+                } else {
+                    isEnabled = false
+                    onBackPressedDispatcher.onBackPressed()
+                    isEnabled = true
+                }
+            }
+        })
         applyAppTheme()
         applyOrientationMode()
         applyDisplayLayout()
@@ -393,7 +411,8 @@ class MainActivity : AppCompatActivity() {
     private fun updateWindowFocusability() {
         val needsFocus = binding.launcherOverlay.visibility == View.VISIBLE ||
             binding.bottomLauncherOverlay.visibility == View.VISIBLE ||
-            binding.shizukuOverlay.visibility == View.VISIBLE
+            binding.shizukuOverlay.visibility == View.VISIBLE ||
+            (::settingsSheet.isInitialized && settingsSheet.isVisible)
         val shouldBeNotFocusable = !needsFocus
         if (shouldBeNotFocusable == isWindowNotFocusable) return
         isWindowNotFocusable = shouldBeNotFocusable
@@ -1912,6 +1931,7 @@ class MainActivity : AppCompatActivity() {
             else -> (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) != Configuration.UI_MODE_NIGHT_YES
         }
         isLightThemeActive = isLight
+        if (::settingsSheet.isInitialized) settingsSheet.refreshTheme(isLight)
 
         val rootBg = Color.parseColor(if (isLight) "#F4F4F8" else "#000000")
         val overlayBg = Color.parseColor(if (isLight) "#F2F4F4F8" else "#EE0B0B0F")
@@ -1980,333 +2000,63 @@ class MainActivity : AppCompatActivity() {
         updateBottomActionButton()
     }
 
+    private fun setupSettingsSheet() {
+        settingsSheet = SettingsSheetController(
+            context = this,
+            prefs = prefs,
+            callbacks = object : SettingsSheetController.Callbacks {
+                override fun onDisplaySettingsChanged(orientationChanged: Boolean) {
+                    activeProfileSplit = null
+                    activeProfileOrientation = null
+                    if (orientationChanged) {
+                        applyOrientationMode()
+                    }
+                    applyDisplayLayout()
+                    syncSurfaceMetadata()
+                }
+
+                override fun onBottomHomeSettingsChanged() {
+                    applyBottomHomeWidgetVisibility()
+                }
+
+                override fun onGamepadSettingsChanged(layoutChanged: Boolean) {
+                    if (layoutChanged) {
+                        binding.virtualFaceButtons.isXboxLayout =
+                            (prefs.getFaceButtonLayout() == SimulatorPrefs.FACE_LAYOUT_XBOX)
+                    }
+                    applyGamepadAppearance()
+                }
+
+                override fun onThemeChanged() {
+                    applyAppTheme()
+                }
+
+                override fun onDrawerSettingsChanged() {
+                    refreshLauncherList()
+                }
+
+                override fun onExportBackupRequested() {
+                    exportBackupLauncher.launch("DroiDS-backup.json")
+                }
+
+                override fun onImportBackupRequested() {
+                    importBackupLauncher.launch(arrayOf("application/json", "text/plain", "*/*"))
+                }
+
+                override fun onVisibilityChanged(visible: Boolean) {
+                    updateWindowFocusability()
+                }
+            }
+        )
+        settingsSheet.attachTo(binding.rootLayout)
+    }
+
     private fun showSettingsDialog() {
-        val categories = arrayOf(
-            "Display & Orientation",
-            "Bottom Home & Control Center",
-            "Virtual Gamepad (Layout, L3/R3, Opacity, Scale)",
-            "App Drawers & Theme",
-            "Backup & Restore Settings (JSON)"
-        )
-        AlertDialog.Builder(this)
-            .setTitle("DroiDS Settings")
-            .setItems(categories) { _, which ->
-                when (which) {
-                    0 -> showDisplayOrientationSettingsDialog()
-                    1 -> showBottomHomeSettingsDialog()
-                    2 -> showGamepadSettingsDialog()
-                    3 -> showDrawerThemeSettingsDialog()
-                    4 -> showBackupRestoreDialog()
-                }
-            }
-            .setNegativeButton("Close", null)
-            .show()
-    }
-
-    private fun showDisplayOrientationSettingsDialog() {
-        val scroll = ScrollView(this)
-        val container = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(48, 24, 48, 16)
+        if (!::settingsSheet.isInitialized) {
+            setupSettingsSheet()
         }
-        scroll.addView(container)
-
-        fun header(t: String) = container.addView(TextView(this).apply {
-            text = t; textSize = 13f
-            setTypeface(null, android.graphics.Typeface.BOLD)
-            setPadding(0, 18, 0, 6)
-        })
-
-        header("Screen Orientation")
-        val orientGroup = RadioGroup(this)
-        val rbLand = RadioButton(this).apply { text = "Landscape (Default)" }
-        val rbPort = RadioButton(this).apply { text = "Portrait" }
-        val rbAuto = RadioButton(this).apply { text = "Auto-Rotate (All Orientations)" }
-        val rbSys = RadioButton(this).apply { text = "Follow Phone Settings" }
-        orientGroup.addView(rbLand); orientGroup.addView(rbPort); orientGroup.addView(rbAuto); orientGroup.addView(rbSys)
-        when (prefs.getOrientationMode()) {
-            SimulatorPrefs.ORIENTATION_PORTRAIT -> rbPort.isChecked = true
-            SimulatorPrefs.ORIENTATION_AUTO -> rbAuto.isChecked = true
-            SimulatorPrefs.ORIENTATION_SYSTEM -> rbSys.isChecked = true
-            else -> rbLand.isChecked = true
-        }
-        container.addView(orientGroup)
-
-        header("Top / Bottom Height Split")
-        val splitLabels = arrayOf("45% Top / 55% Bottom", "50% Top / 50% Bottom", "53% Top / 47% Bottom (Default)", "58% Top / 42% Bottom", "62% Top / 38% Bottom")
-        val splitValues = floatArrayOf(0.45f, 0.50f, 0.53f, 0.58f, 0.62f)
-        val splitSpinner = android.widget.Spinner(this).apply {
-            adapter = android.widget.ArrayAdapter(this@MainActivity, android.R.layout.simple_spinner_dropdown_item, splitLabels)
-            val cur = prefs.getSplitPercent()
-            setSelection(splitValues.indices.minByOrNull { kotlin.math.abs(splitValues[it] - cur) } ?: 2)
-        }
-        container.addView(splitSpinner)
-
-        header("Top Screen Aspect Ratio")
-        val topLabels = arrayOf("16:9 (Default)", "4:3", "3:2", "Fill Width")
-        val topValues = arrayOf("16:9", "4:3", "3:2", "Fill")
-        val topSpinner = android.widget.Spinner(this).apply {
-            adapter = android.widget.ArrayAdapter(this@MainActivity, android.R.layout.simple_spinner_dropdown_item, topLabels)
-            setSelection(topValues.indexOf(prefs.getTopAspectRatio()).takeIf { it >= 0 } ?: 0)
-        }
-        container.addView(topSpinner)
-
-        header("Bottom Screen Aspect Ratio")
-        val botLabels = arrayOf("1240:1080 (Thor Default)", "4:3", "1:1 (Square)", "16:9")
-        val botValues = arrayOf("1240:1080", "4:3", "1:1", "16:9")
-        val botSpinner = android.widget.Spinner(this).apply {
-            adapter = android.widget.ArrayAdapter(this@MainActivity, android.R.layout.simple_spinner_dropdown_item, botLabels)
-            setSelection(botValues.indexOf(prefs.getBottomAspectRatio()).takeIf { it >= 0 } ?: 0)
-        }
-        container.addView(botSpinner)
-
-        AlertDialog.Builder(this)
-            .setTitle("Display & Orientation")
-            .setView(scroll)
-            .setPositiveButton("Save") { _, _ ->
-                prefs.setOrientationMode(when {
-                    rbPort.isChecked -> SimulatorPrefs.ORIENTATION_PORTRAIT
-                    rbAuto.isChecked -> SimulatorPrefs.ORIENTATION_AUTO
-                    rbSys.isChecked -> SimulatorPrefs.ORIENTATION_SYSTEM
-                    else -> SimulatorPrefs.ORIENTATION_LANDSCAPE
-                })
-                prefs.setSplitPercent(splitValues[splitSpinner.selectedItemPosition])
-                prefs.setTopAspectRatio(topValues[topSpinner.selectedItemPosition])
-                prefs.setBottomAspectRatio(botValues[botSpinner.selectedItemPosition])
-                activeProfileSplit = null
-                activeProfileOrientation = null
-                applyOrientationMode()
-                applyDisplayLayout()
-                syncSurfaceMetadata()
-            }
-            .setNegativeButton("Back") { _, _ -> showSettingsDialog() }
-            .show()
-    }
-
-    private fun showBottomHomeSettingsDialog() {
-        val scroll = ScrollView(this)
-        val container = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(48, 24, 48, 16)
-        }
-        scroll.addView(container)
-
-        fun header(t: String) = container.addView(TextView(this).apply {
-            text = t; textSize = 13f
-            setTypeface(null, android.graphics.Typeface.BOLD)
-            setPadding(0, 18, 0, 6)
-        })
-
-        header("Dashboard Widgets")
-        val cbClock = CheckBox(this).apply { text = "Show Clock & Date"; isChecked = prefs.isShowHomeClock() }
-        val cbPerf = CheckBox(this).apply { text = "Show Performance Monitor (CPU, GPU, RAM, Battery)"; isChecked = prefs.isShowHomePerf() }
-        val cbShortcuts = CheckBox(this).apply { text = "Show Quick Shortcuts"; isChecked = prefs.isShowHomeShortcuts() }
-        val cbCc = CheckBox(this).apply { text = "Show Quick Control Center"; isChecked = prefs.isShowControlCenter() }
-        container.addView(cbClock); container.addView(cbPerf); container.addView(cbShortcuts); container.addView(cbCc)
-
-        header("Control Center Items")
-        val cbBright = CheckBox(this).apply { text = "Brightness Slider"; isChecked = prefs.isShowCcBrightness() }
-        val cbVol = CheckBox(this).apply { text = "Media Volume Slider"; isChecked = prefs.isShowCcVolume() }
-        val cbWifi = CheckBox(this).apply { text = "Wi-Fi Quick Toggle"; isChecked = prefs.isShowCcWifi() }
-        val cbBt = CheckBox(this).apply { text = "Bluetooth Quick Toggle"; isChecked = prefs.isShowCcBluetooth() }
-        val cbSleep = CheckBox(this).apply { text = "Dim / Sleep Bottom Screen (AMOLED)"; isChecked = prefs.isShowCcSleepBottom() }
-        container.addView(cbBright); container.addView(cbVol); container.addView(cbWifi); container.addView(cbBt); container.addView(cbSleep)
-
-        AlertDialog.Builder(this)
-            .setTitle("Bottom Home & Control Center")
-            .setView(scroll)
-            .setPositiveButton("Save") { _, _ ->
-                prefs.setShowHomeClock(cbClock.isChecked)
-                prefs.setShowHomePerf(cbPerf.isChecked)
-                prefs.setShowHomeShortcuts(cbShortcuts.isChecked)
-                prefs.setShowControlCenter(cbCc.isChecked)
-                prefs.setShowCcBrightness(cbBright.isChecked)
-                prefs.setShowCcVolume(cbVol.isChecked)
-                prefs.setShowCcWifi(cbWifi.isChecked)
-                prefs.setShowCcBluetooth(cbBt.isChecked)
-                prefs.setShowCcSleepBottom(cbSleep.isChecked)
-                applyBottomHomeWidgetVisibility()
-            }
-            .setNegativeButton("Back") { _, _ -> showSettingsDialog() }
-            .show()
-    }
-
-    private fun showGamepadSettingsDialog() {
-        val scroll = ScrollView(this)
-        val container = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(48, 24, 48, 16)
-        }
-        scroll.addView(container)
-
-        fun header(t: String) = container.addView(TextView(this).apply {
-            text = t; textSize = 13f
-            setTypeface(null, android.graphics.Typeface.BOLD)
-            setPadding(0, 18, 0, 6)
-        })
-
-        header("Face Button Layout (A/B/X/Y)")
-        val layoutGroup = RadioGroup(this)
-        val rbXbox = RadioButton(this).apply { text = "Xbox / GameSir (A bottom, B right, X left, Y top)" }
-        val rbNintendo = RadioButton(this).apply { text = "Nintendo (B bottom, A right, Y left, X top)" }
-        layoutGroup.addView(rbXbox); layoutGroup.addView(rbNintendo)
-        if (prefs.getFaceButtonLayout() == SimulatorPrefs.FACE_LAYOUT_XBOX) rbXbox.isChecked = true else rbNintendo.isChecked = true
-        container.addView(layoutGroup)
-
-        header("Stick Click & Feedback")
-        val cbL3R3 = CheckBox(this).apply {
-            text = "Show L3 / R3 Buttons (when joysticks are visible)"
-            isChecked = prefs.isShowL3R3()
-        }
-        val cbHaptics = CheckBox(this).apply {
-            text = "Haptic Feedback on Button Press"
-            isChecked = prefs.isHapticsEnabled()
-        }
-        val cbKernelPad = CheckBox(this).apply {
-            text = "Fast Kernel Gamepad (uinput — avoids 5s Android input stalls)"
-            isChecked = prefs.isUseKernelGamepad()
-        }
-        val cbFourWay = CheckBox(this).apply {
-            text = "4-Way D-Pad Only (prevents accidental diagonals in menus)"
-            isChecked = prefs.isDpadFourWayOnly()
-        }
-        container.addView(cbL3R3)
-        container.addView(cbHaptics)
-        container.addView(cbKernelPad)
-        container.addView(cbFourWay)
-
-        val curOpacityPct = (prefs.getGamepadOpacity() * 100f).toInt().coerceIn(25, 100)
-        val tvOpacity = TextView(this).apply {
-            text = "Touch Control Opacity: $curOpacityPct%"
-            textSize = 13f
-            setTypeface(null, android.graphics.Typeface.BOLD)
-            setPadding(0, 18, 0, 4)
-        }
-        val seekOpacity = SeekBar(this).apply {
-            max = 75
-            progress = curOpacityPct - 25
-            setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
-                override fun onProgressChanged(sb: SeekBar?, p: Int, fromUser: Boolean) {
-                    tvOpacity.text = "Touch Control Opacity: ${p + 25}%"
-                }
-                override fun onStartTrackingTouch(sb: SeekBar?) {}
-                override fun onStopTrackingTouch(sb: SeekBar?) {}
-            })
-        }
-        container.addView(tvOpacity)
-        container.addView(seekOpacity)
-
-        val curScalePct = (prefs.getGamepadScale() * 100f).toInt().coerceIn(75, 125)
-        val tvScale = TextView(this).apply {
-            text = "Control Scale: $curScalePct%"
-            textSize = 13f
-            setTypeface(null, android.graphics.Typeface.BOLD)
-            setPadding(0, 18, 0, 4)
-        }
-        val seekScale = SeekBar(this).apply {
-            max = 50
-            progress = curScalePct - 75
-            setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
-                override fun onProgressChanged(sb: SeekBar?, p: Int, fromUser: Boolean) {
-                    tvScale.text = "Control Scale: ${p + 75}%"
-                }
-                override fun onStartTrackingTouch(sb: SeekBar?) {}
-                override fun onStopTrackingTouch(sb: SeekBar?) {}
-            })
-        }
-        container.addView(tvScale)
-        container.addView(seekScale)
-
-        AlertDialog.Builder(this)
-            .setTitle("Virtual Gamepad")
-            .setView(scroll)
-            .setPositiveButton("Save") { _, _ ->
-                val chosenLayout = if (rbXbox.isChecked) SimulatorPrefs.FACE_LAYOUT_XBOX else SimulatorPrefs.FACE_LAYOUT_NINTENDO
-                prefs.setFaceButtonLayout(chosenLayout)
-                binding.virtualFaceButtons.isXboxLayout = (chosenLayout == SimulatorPrefs.FACE_LAYOUT_XBOX)
-                prefs.setShowL3R3(cbL3R3.isChecked)
-                prefs.setHapticsEnabled(cbHaptics.isChecked)
-                prefs.setUseKernelGamepad(cbKernelPad.isChecked)
-                prefs.setDpadFourWayOnly(cbFourWay.isChecked)
-                prefs.setGamepadOpacity((seekOpacity.progress + 25) / 100f)
-                prefs.setGamepadScale((seekScale.progress + 75) / 100f)
-                applyGamepadAppearance()
-            }
-            .setNegativeButton("Back") { _, _ -> showSettingsDialog() }
-            .show()
-    }
-
-    private fun showDrawerThemeSettingsDialog() {
-        val scroll = ScrollView(this)
-        val container = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(48, 24, 48, 16)
-        }
-        scroll.addView(container)
-
-        fun header(t: String) = container.addView(TextView(this).apply {
-            text = t; textSize = 13f
-            setTypeface(null, android.graphics.Typeface.BOLD)
-            setPadding(0, 18, 0, 6)
-        })
-
-        header("Theme")
-        val themeGroup = RadioGroup(this)
-        val rbSystem = RadioButton(this).apply { text = "Follow System" }
-        val rbDark = RadioButton(this).apply { text = "Dark (AMOLED)" }
-        val rbLight = RadioButton(this).apply { text = "Light" }
-        themeGroup.addView(rbSystem); themeGroup.addView(rbDark); themeGroup.addView(rbLight)
-        when (prefs.getThemeMode()) {
-            SimulatorPrefs.THEME_LIGHT -> rbLight.isChecked = true
-            SimulatorPrefs.THEME_DARK -> rbDark.isChecked = true
-            else -> rbSystem.isChecked = true
-        }
-        container.addView(themeGroup)
-
-        header("App Drawers")
-        val cbRecent = CheckBox(this).apply {
-            text = "Show Recently Launched Row in App Drawers"
-            isChecked = prefs.isShowRecentRow()
-        }
-        container.addView(cbRecent)
-        container.addView(TextView(this).apply {
-            text = "Tip: Long-press any app in either drawer to hide it, assign folders, toggle Dual-Screen mode, or set a Per-App Layout Profile."
-            textSize = 12f
-            setPadding(0, 12, 0, 0)
-        })
-
-        AlertDialog.Builder(this)
-            .setTitle("App Drawers & Theme")
-            .setView(scroll)
-            .setPositiveButton("Save") { _, _ ->
-                prefs.setThemeMode(when {
-                    rbLight.isChecked -> SimulatorPrefs.THEME_LIGHT
-                    rbDark.isChecked -> SimulatorPrefs.THEME_DARK
-                    else -> SimulatorPrefs.THEME_SYSTEM
-                })
-                prefs.setShowRecentRow(cbRecent.isChecked)
-                applyAppTheme()
-                refreshLauncherList()
-            }
-            .setNegativeButton("Back") { _, _ -> showSettingsDialog() }
-            .show()
-    }
-
-    private fun showBackupRestoreDialog() {
-        val options = arrayOf(
-            "Export Settings to JSON File…",
-            "Import Settings from JSON File…"
-        )
-        AlertDialog.Builder(this)
-            .setTitle("Backup & Restore Settings")
-            .setItems(options) { _, which ->
-                when (which) {
-                    0 -> exportBackupLauncher.launch("DroiDS-backup.json")
-                    1 -> importBackupLauncher.launch(arrayOf("application/json", "text/plain", "*/*"))
-                }
-            }
-            .setNegativeButton("Back") { _, _ -> showSettingsDialog() }
-            .show()
+        settingsSheet.refreshTheme(isLightThemeActive)
+        settingsSheet.show()
     }
 
     private fun showAppProfileDialog(app: AppInfo) {
