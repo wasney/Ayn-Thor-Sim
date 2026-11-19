@@ -63,4 +63,8 @@ interface IVirtualDisplayService {
     String getDebugLog() = 8;
 
     boolean forceStopPackage(String packageName) = 9;
+
+    boolean swapTasksBetweenDisplays(int topDisplayId, int bottomDisplayId) = 10;
+
+    boolean closeTasksOnDisplay(int displayId) = 11;
 }

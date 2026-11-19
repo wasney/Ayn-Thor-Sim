@@ -470,6 +470,109 @@ class VirtualDisplayUserService(private val baseContext: Context) : IVirtualDisp
         }
     }
 
+
+    private val activityTaskManager: Any? by lazy {
+        try {
+            val atmClass = Class.forName("android.app.ActivityTaskManager")
+            atmClass.getMethod("getService").invoke(null)
+        } catch (e: Throwable) {
+            log("Failed to get IActivityTaskManager", e)
+            null
+        }
+    }
+
+    private fun getTasksOnDisplay(displayId: Int): List<Any> {
+        val atm = activityTaskManager ?: return emptyList()
+        return try {
+            val method = atm.javaClass.getMethod("getAllRootTaskInfosOnDisplay", Int::class.javaPrimitiveType)
+            @Suppress("UNCHECKED_CAST")
+            (method.invoke(atm, displayId) as? List<Any>) ?: emptyList()
+        } catch (e: Throwable) {
+            log("getAllRootTaskInfosOnDisplay($displayId) failed", e)
+            emptyList()
+        }
+    }
+
+    private fun extractTaskId(taskInfo: Any): Int {
+        return try {
+            taskInfo.javaClass.getField("taskId").getInt(taskInfo)
+        } catch (_: Throwable) {
+            -1
+        }
+    }
+
+    private fun extractPackageName(taskInfo: Any): String? {
+        return try {
+            val topAct = taskInfo.javaClass.getField("topActivity").get(taskInfo) as? android.content.ComponentName
+            val baseAct = taskInfo.javaClass.getField("baseActivity").get(taskInfo) as? android.content.ComponentName
+            topAct?.packageName ?: baseAct?.packageName
+        } catch (_: Throwable) {
+            null
+        }
+    }
+
+    override fun swapTasksBetweenDisplays(topDisplayId: Int, bottomDisplayId: Int): Boolean {
+        val atm = activityTaskManager ?: return false
+        return try {
+            val moveMethod = atm.javaClass.getMethod(
+                "moveRootTaskToDisplay",
+                Int::class.javaPrimitiveType,
+                Int::class.javaPrimitiveType
+            )
+            val topTasks = getTasksOnDisplay(topDisplayId)
+            val bottomTasks = getTasksOnDisplay(bottomDisplayId)
+
+            val topTaskId = topTasks.firstOrNull()?.let { extractTaskId(it) } ?: -1
+            val bottomTaskId = bottomTasks.firstOrNull()?.let { extractTaskId(it) } ?: -1
+            log("swapTasksBetweenDisplays: topTask=$topTaskId -> $bottomDisplayId, bottomTask=$bottomTaskId -> $topDisplayId")
+
+            if (topTaskId > 0) {
+                moveMethod.invoke(atm, topTaskId, bottomDisplayId)
+            }
+            if (bottomTaskId > 0) {
+                moveMethod.invoke(atm, bottomTaskId, topDisplayId)
+            }
+            topTaskId > 0 || bottomTaskId > 0
+        } catch (e: Throwable) {
+            log("swapTasksBetweenDisplays failed", e)
+            false
+        }
+    }
+
+    override fun closeTasksOnDisplay(displayId: Int): Boolean {
+        val atm = activityTaskManager
+        val tasks = getTasksOnDisplay(displayId)
+        if (tasks.isEmpty()) {
+            log("closeTasksOnDisplay($displayId): no tasks found")
+            return false
+        }
+        var closedAny = false
+        val removeMethod = try {
+            atm?.javaClass?.getMethod("removeTask", Int::class.javaPrimitiveType)
+        } catch (_: Throwable) {
+            null
+        }
+
+        for (task in tasks) {
+            val taskId = extractTaskId(task)
+            val pkg = extractPackageName(task)
+            var removed = false
+            if (atm != null && removeMethod != null && taskId > 0) {
+                try {
+                    removed = (removeMethod.invoke(atm, taskId) as? Boolean) == true
+                    log("removeTask($taskId, pkg=$pkg) -> $removed")
+                } catch (e: Throwable) {
+                    log("removeTask($taskId) failed", e)
+                }
+            }
+            if (!removed && !pkg.isNullOrBlank()) {
+                removed = forceStopPackage(pkg)
+            }
+            if (removed) closedAny = true
+        }
+        return closedAny
+    }
+
     override fun forceStopPackage(packageName: String): Boolean {
         return try {
             val process = ProcessBuilder("am", "force-stop", packageName)

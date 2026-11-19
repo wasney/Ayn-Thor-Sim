@@ -645,25 +645,18 @@ class MainActivity : AppCompatActivity() {
 
     private fun swapScreens() {
         val service = userService ?: return
-        if (!topSurfaceReady || !bottomSurfaceReady || primaryDisplayId <= 0 || secondaryDisplayId <= 0) return
-
-        isSwapped = !isSwapped
-        val topSurface = binding.topSurfaceView.holder.surface
-        val bottomSurface = binding.bottomSurfaceView.holder.surface
+        if (primaryDisplayId <= 0 || secondaryDisplayId <= 0) return
 
         ioExecutor.execute {
-            if (isSwapped) {
-                service.swapSurfaces(bottomSurface, topSurface)
-            } else {
-                service.swapSurfaces(topSurface, bottomSurface)
-            }
+            val ok = service.swapTasksBetweenDisplays(primaryDisplayId, secondaryDisplayId)
             runOnUiThread {
-                syncSurfaceMetadata()
-                Toast.makeText(
-                    this,
-                    if (isSwapped) "Screens swapped" else "Screens restored",
-                    Toast.LENGTH_SHORT
-                ).show()
+                if (ok) {
+                    binding.launcherOverlay.visibility = View.GONE
+                    binding.bottomLauncherOverlay.visibility = View.GONE
+                    Toast.makeText(this, "Swapped top & bottom apps", Toast.LENGTH_SHORT).show()
+                } else {
+                    Toast.makeText(this, "No active apps to swap", Toast.LENGTH_SHORT).show()
+                }
             }
         }
     }
@@ -704,19 +697,19 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun closeBottomApp() {
-        val pkg = lastBottomPackage
-        if (pkg.isNullOrBlank()) {
-            Toast.makeText(this, "No bottom app tracked yet", Toast.LENGTH_SHORT).show()
-            return
-        }
+        val service = userService ?: return
+        if (secondaryDisplayId <= 0) return
         ioExecutor.execute {
-            val ok = userService?.forceStopPackage(pkg) == true
+            var ok = service.closeTasksOnDisplay(secondaryDisplayId)
+            if (!ok && !lastBottomPackage.isNullOrBlank()) {
+                ok = service.forceStopPackage(lastBottomPackage!!)
+            }
             runOnUiThread {
                 if (ok) {
                     lastBottomPackage = null
                     Toast.makeText(this, "Closed bottom app", Toast.LENGTH_SHORT).show()
                 } else {
-                    Toast.makeText(this, "Failed to close $pkg", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(this, "No active app on bottom screen", Toast.LENGTH_SHORT).show()
                 }
             }
         }
