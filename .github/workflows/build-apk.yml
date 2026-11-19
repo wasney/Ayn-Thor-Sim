@@ -1,4 +1,4 @@
-name: Unpack & Build Debug APK
+name: Unpack, Build & Release APK
 
 on:
   push:
@@ -16,13 +16,14 @@ jobs:
 
       - name: Unpack zip if present
         run: |
-          if [ -f AynThorSimulator.zip ]; then
-            unzip -o AynThorSimulator.zip -x ".github/*"
-            rm -f AynThorSimulator.zip
+          ZIP_FILE=$(ls AynThorSimulator*.zip 2>/dev/null | head -n 1 || true)
+          if [ -n "$ZIP_FILE" ]; then
+            unzip -o "$ZIP_FILE" -x ".github/*"
+            rm -f AynThorSimulator*.zip
             git config user.name "github-actions[bot]"
             git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
             git add -A
-            git diff --cached --quiet || (git commit -m "Unpack AynThorSimulator.zip" && git push)
+            git diff --cached --quiet || (git commit -m "Unpack $ZIP_FILE" && git push)
           fi
 
       - uses: actions/setup-java@v4
@@ -38,23 +39,29 @@ jobs:
         with:
           gradle-version: '8.9'
 
-      - name: Build Debug APK
+      - name: Build & Rename Versioned Debug APK
         run: |
           if [ ! -f gradle/wrapper/gradle-wrapper.jar ]; then
             gradle wrapper --gradle-version 8.9
           fi
           chmod +x gradlew
           ./gradlew assembleDebug --stacktrace
+          VERSION_NAME=$(grep -oE 'versionName\s*=\s*"[^"]+"' app/build.gradle.kts | head -n1 | sed -E 's/.*"([^"]+)"/\1/')
+          VERSION_NAME=${VERSION_NAME:-"1.0.0"}
+          echo "APP_VERSION=$VERSION_NAME" >> "$GITHUB_ENV"
+          mkdir -p release_apks
+          cp app/build/outputs/apk/debug/app-debug.apk "release_apks/AynThorSimulator-v${VERSION_NAME}-debug.apk"
 
       - uses: actions/upload-artifact@v4
         with:
-          name: AynThorSimulator-debug-apk
-          path: app/build/outputs/apk/debug/*.apk
+          name: AynThorSimulator-v${{ env.APP_VERSION }}-debug-apk
+          path: release_apks/*.apk
           if-no-files-found: error
+
       - name: Publish APK to GitHub Releases
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: build-${{ github.run_number }}
-          name: AynThorSimulator Build #${{ github.run_number }}
-          files: app/build/outputs/apk/debug/*.apk
+          tag_name: v${{ env.APP_VERSION }}-b${{ github.run_number }}
+          name: AynThorSimulator v${{ env.APP_VERSION }} (Build #${{ github.run_number }})
+          files: release_apks/*.apk
           generate_release_notes: true
