@@ -180,6 +180,7 @@ class MainActivity : AppCompatActivity() {
         binding.topSurfaceView.apply {
             virtualWidth = TOP_WIDTH
             virtualHeight = TOP_HEIGHT
+            holder.setFixedSize(TOP_WIDTH, TOP_HEIGHT)
             touchForwardingEnabled = prefs.isTopTouchForwardingEnabled()
             onTouchInject = { displayId, action, downTime, eventTime, count, ids, xs, ys, pressures ->
                 ioExecutor.execute {
@@ -203,6 +204,7 @@ class MainActivity : AppCompatActivity() {
         binding.bottomSurfaceView.apply {
             virtualWidth = BOTTOM_WIDTH
             virtualHeight = BOTTOM_HEIGHT
+            holder.setFixedSize(BOTTOM_WIDTH, BOTTOM_HEIGHT)
             touchForwardingEnabled = true
             onTouchInject = { displayId, action, downTime, eventTime, count, ids, xs, ys, pressures ->
                 ioExecutor.execute {
@@ -620,10 +622,17 @@ class MainActivity : AppCompatActivity() {
     private fun tryCreateVirtualDisplays() {
         val service = userService ?: return
         if (!topSurfaceReady || !bottomSurfaceReady) return
-        if (primaryDisplayId > 0 && secondaryDisplayId > 0) return
 
         val topSurface = binding.topSurfaceView.holder.surface
         val bottomSurface = binding.bottomSurfaceView.holder.surface
+
+        // If displays already exist (e.g. returning after minimizing), re-attach the newly created Surfaces
+        if (primaryDisplayId > 0 && secondaryDisplayId > 0) {
+            ioExecutor.execute {
+                service.swapSurfaces(topSurface, bottomSurface)
+            }
+            return
+        }
 
         ioExecutor.execute {
             val ids = service.createDisplays(
