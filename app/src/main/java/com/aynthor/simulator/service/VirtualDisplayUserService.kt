@@ -294,6 +294,7 @@ class VirtualDisplayUserService(private val baseContext: Context) : IVirtualDisp
             if (cachedFocusDisplayId == displayId && cachedFocusTaskId > 0) {
                 try {
                     focusMethod.invoke(atm, cachedFocusTaskId)
+                    pokeDisplayFocus(displayId)
                     return
                 } catch (_: Throwable) {
                     invalidateFocusCache()
@@ -310,6 +311,18 @@ class VirtualDisplayUserService(private val baseContext: Context) : IVirtualDisp
             invalidateFocusCache()
             log("focusDisplay($displayId) failed", e)
         }
+        pokeDisplayFocus(displayId)
+    }
+
+    private fun pokeDisplayFocus(displayId: Int) {
+        if (displayId <= 0) return
+        val now = android.os.SystemClock.uptimeMillis()
+        val ids = intArrayOf(99)
+        val xs = floatArrayOf(1f)
+        val ys = floatArrayOf(1f)
+        val ps = floatArrayOf(1f)
+        injectTouchEvent(displayId, MotionEvent.ACTION_DOWN, now, now, 1, ids, xs, ys, ps)
+        injectTouchEvent(displayId, MotionEvent.ACTION_CANCEL, now, now + 1L, 1, ids, xs, ys, floatArrayOf(0f))
     }
 
     override fun injectTouchEvent(
