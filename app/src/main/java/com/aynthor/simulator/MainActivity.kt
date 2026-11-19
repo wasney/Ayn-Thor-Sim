@@ -143,7 +143,7 @@ class MainActivity : AppCompatActivity() {
             .daemon(false)
             .processNameSuffix("virtual_display_service")
             .debuggable(false)
-            .version(37)
+            .version(38)
     }
 
     private val serviceConnection = object : ServiceConnection {
@@ -1156,7 +1156,9 @@ class MainActivity : AppCompatActivity() {
             val intent = Intent(Intent.ACTION_MAIN).apply {
                 addCategory(Intent.CATEGORY_LAUNCHER)
                 component = ComponentName(app.packageName, app.activityName)
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_MULTIPLE_TASK)
+                // Use FLAG_ACTIVITY_NEW_TASK (without MULTIPLE_TASK) so re-selecting a paused
+                // app like SeedlessDS resumes the existing game cleanly instead of spawning a duplicate.
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             }
             val options = ActivityOptions.makeBasic().setLaunchDisplayId(displayId)
             startActivity(intent, options.toBundle())
@@ -1169,17 +1171,22 @@ class MainActivity : AppCompatActivity() {
             ioExecutor.execute {
                 val ok = userService?.launchAppOnDisplay(app.packageName, app.activityName, displayId) == true
                 runOnUiThread {
-                    if (ok && hideLauncherAfter) {
-                        binding.etTopSearch.clearFocus(); binding.launcherOverlay.visibility = View.GONE
-                    } else if (!ok) {
+                    if (ok) {
+                        addLocalLog("Launched ${app.packageName} on display $displayId (via service)")
+                        if (hideLauncherAfter) {
+                            binding.etTopSearch.clearFocus(); binding.launcherOverlay.visibility = View.GONE
+                        }
+                    } else {
                         Toast.makeText(this, "Failed to launch ${app.label}", Toast.LENGTH_SHORT).show()
                     }
                 }
             }
-        } else if (hideLauncherAfter) {
+        } else {
             addLocalLog("Launched ${app.packageName} on display $displayId")
             binding.root.postDelayed({ ioExecutor.execute { userService?.focusDisplay(displayId) } }, 450L)
-            binding.etTopSearch.clearFocus(); binding.launcherOverlay.visibility = View.GONE
+            if (hideLauncherAfter) {
+                binding.etTopSearch.clearFocus(); binding.launcherOverlay.visibility = View.GONE
+            }
         }
     }
 

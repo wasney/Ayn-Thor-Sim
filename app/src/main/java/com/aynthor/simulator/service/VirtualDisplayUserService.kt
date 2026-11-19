@@ -306,21 +306,21 @@ class VirtualDisplayUserService(private val baseContext: Context) : IVirtualDisp
         val atm = activityTaskManager ?: return
         try {
             val focusMethod = atm.javaClass.getMethod("setFocusedRootTask", Int::class.javaPrimitiveType)
-            if (cachedFocusDisplayId == displayId && cachedFocusTaskId > 0) {
-                try {
-                    focusMethod.invoke(atm, cachedFocusTaskId)
-                    pokeDisplayFocus(displayId)
-                    return
-                } catch (_: Throwable) {
-                    invalidateFocusCache()
-                }
-            }
+            // Always query the live frontmost task on this display so launching a new app
+            // over an existing one (e.g. over SeedlessDS) never yanks the previous app back to front.
             val tasks = getTasksOnDisplay(displayId)
-            val topTaskId = tasks.firstOrNull()?.let { extractTaskId(it) } ?: -1
+            val topTask = tasks.firstOrNull()
+            val topTaskId = topTask?.let { extractTaskId(it) } ?: -1
             if (topTaskId > 0) {
-                cachedFocusDisplayId = displayId
-                cachedFocusTaskId = topTaskId
+                if (cachedFocusDisplayId != displayId || cachedFocusTaskId != topTaskId) {
+                    val pkg = extractPackageName(topTask)
+                    log("focusDisplay($displayId) -> task=$topTaskId ($pkg)")
+                    cachedFocusDisplayId = displayId
+                    cachedFocusTaskId = topTaskId
+                }
                 focusMethod.invoke(atm, topTaskId)
+            } else {
+                invalidateFocusCache()
             }
         } catch (e: Throwable) {
             invalidateFocusCache()
