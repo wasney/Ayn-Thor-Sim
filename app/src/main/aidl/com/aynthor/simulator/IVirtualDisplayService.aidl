@@ -19,7 +19,7 @@ interface IVirtualDisplayService {
 
     void swapSurfaces(in Surface topSurface, in Surface bottomSurface) = 2;
 
-    void injectTouchEvent(
+    oneway void injectTouchEvent(
         int displayId,
         int action,
         long downTime,
@@ -31,7 +31,7 @@ interface IVirtualDisplayService {
         in float[] pressures
     ) = 3;
 
-    void injectKeyEvent(
+    oneway void injectKeyEvent(
         int displayId,
         int action,
         int keyCode,
@@ -42,7 +42,7 @@ interface IVirtualDisplayService {
         int source
     ) = 4;
 
-    void injectJoystickEvent(
+    oneway void injectJoystickEvent(
         int displayId,
         long downTime,
         long eventTime,
@@ -67,4 +67,6 @@ interface IVirtualDisplayService {
     boolean swapTasksBetweenDisplays(int topDisplayId, int bottomDisplayId) = 10;
 
     boolean closeTasksOnDisplay(int displayId) = 11;
+
+    oneway void focusDisplay(int displayId) = 12;
 }

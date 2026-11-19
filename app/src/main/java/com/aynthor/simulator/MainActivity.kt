@@ -33,6 +33,7 @@ import com.aynthor.simulator.prefs.SimulatorPrefs
 import com.aynthor.simulator.service.VirtualDisplayUserService
 import rikka.shizuku.Shizuku
 import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicBoolean
 
 class MainActivity : AppCompatActivity() {
 
@@ -53,6 +54,9 @@ class MainActivity : AppCompatActivity() {
     private var lastBottomPackage: String? = null
 
     private val ioExecutor = Executors.newSingleThreadExecutor()
+    private val inputExecutor = Executors.newSingleThreadExecutor()
+    private val joystickPending = AtomicBoolean(false)
+    private var lastBottomTouchTime = 0L
 
     private var userService: IVirtualDisplayService? = null
     private var isServiceBound = false
@@ -67,10 +71,12 @@ class MainActivity : AppCompatActivity() {
     private var physicalControllerConnected = false
     private var manualTouchOverride: Boolean? = null
 
-    private var leftStickX = 0f
-    private var leftStickY = 0f
-    private var rightStickX = 0f
-    private var rightStickY = 0f
+    @Volatile private var leftStickX = 0f
+    @Volatile private var leftStickY = 0f
+    @Volatile private var rightStickX = 0f
+    @Volatile private var rightStickY = 0f
+    @Volatile private var hatX = 0f
+    @Volatile private var hatY = 0f
     private val keyDownTimes = mutableMapOf<Int, Long>()
     private val localLogs = mutableListOf<String>()
 
@@ -183,10 +189,16 @@ class MainActivity : AppCompatActivity() {
             holder.setFixedSize(TOP_WIDTH, TOP_HEIGHT)
             touchForwardingEnabled = prefs.isTopTouchForwardingEnabled()
             onTouchInject = { displayId, action, downTime, eventTime, count, ids, xs, ys, pressures ->
-                ioExecutor.execute {
+                inputExecutor.execute {
                     userService?.injectTouchEvent(
                         displayId, action, downTime, eventTime, count, ids, xs, ys, pressures
                     )
+                    if (displayId == secondaryDisplayId &&
+                        (action and MotionEvent.ACTION_MASK) == MotionEvent.ACTION_UP
+                    ) {
+                        lastBottomTouchTime = SystemClock.uptimeMillis()
+                        userService?.focusDisplay(primaryDisplayId)
+                    }
                 }
             }
             holder.addCallback(object : SurfaceHolder.Callback {
@@ -207,10 +219,16 @@ class MainActivity : AppCompatActivity() {
             holder.setFixedSize(BOTTOM_WIDTH, BOTTOM_HEIGHT)
             touchForwardingEnabled = true
             onTouchInject = { displayId, action, downTime, eventTime, count, ids, xs, ys, pressures ->
-                ioExecutor.execute {
+                inputExecutor.execute {
                     userService?.injectTouchEvent(
                         displayId, action, downTime, eventTime, count, ids, xs, ys, pressures
                     )
+                    if (displayId == secondaryDisplayId &&
+                        (action and MotionEvent.ACTION_MASK) == MotionEvent.ACTION_UP
+                    ) {
+                        lastBottomTouchTime = SystemClock.uptimeMillis()
+                        userService?.focusDisplay(primaryDisplayId)
+                    }
                 }
             }
             holder.addCallback(object : SurfaceHolder.Callback {
@@ -476,10 +494,29 @@ class MainActivity : AppCompatActivity() {
             return
         }
 
-        val targetId = activeTopDisplayId
+        // Always target the top virtual display (primaryDisplayId) for gamepad controls
+        val targetId = primaryDisplayId
         if (targetId <= 0) return
 
-        ioExecutor.execute {
+        // Also update HAT axes when D-pad is pressed so games reading either KeyEvent or HAT work
+        when (keyCode) {
+            KeyEvent.KEYCODE_DPAD_LEFT -> hatX = if (isDown) -1f else if (hatX < 0f) 0f else hatX
+            KeyEvent.KEYCODE_DPAD_RIGHT -> hatX = if (isDown) 1f else if (hatX > 0f) 0f else hatX
+            KeyEvent.KEYCODE_DPAD_UP -> hatY = if (isDown) -1f else if (hatY < 0f) 0f else hatY
+            KeyEvent.KEYCODE_DPAD_DOWN -> hatY = if (isDown) 1f else if (hatY > 0f) 0f else hatY
+        }
+
+        val source = if (keyCode in KeyEvent.KEYCODE_DPAD_UP..KeyEvent.KEYCODE_DPAD_RIGHT) {
+            InputDevice.SOURCE_DPAD or InputDevice.SOURCE_GAMEPAD
+        } else {
+            InputDevice.SOURCE_GAMEPAD
+        }
+
+        inputExecutor.execute {
+            if (lastBottomTouchTime > 0L) {
+                lastBottomTouchTime = 0L
+                userService?.focusDisplay(targetId)
+            }
             userService?.injectKeyEvent(
                 targetId,
                 action,
@@ -488,16 +525,30 @@ class MainActivity : AppCompatActivity() {
                 now,
                 0,
                 0,
-                InputDevice.SOURCE_GAMEPAD
+                source
             )
+            if (keyCode in KeyEvent.KEYCODE_DPAD_UP..KeyEvent.KEYCODE_DPAD_RIGHT) {
+                userService?.injectJoystickEvent(
+                    targetId, now, now,
+                    leftStickX, leftStickY, rightStickX, rightStickY,
+                    0f, 0f, hatX, hatY
+                )
+            }
         }
     }
 
     private fun sendVirtualJoystick() {
-        val targetId = activeTopDisplayId
+        val targetId = primaryDisplayId
         if (targetId <= 0) return
-        val now = SystemClock.uptimeMillis()
-        ioExecutor.execute {
+        if (!joystickPending.compareAndSet(false, true)) return
+
+        inputExecutor.execute {
+            joystickPending.set(false)
+            val now = SystemClock.uptimeMillis()
+            if (lastBottomTouchTime > 0L) {
+                lastBottomTouchTime = 0L
+                userService?.focusDisplay(targetId)
+            }
             userService?.injectJoystickEvent(
                 targetId,
                 now,
@@ -508,8 +559,8 @@ class MainActivity : AppCompatActivity() {
                 rightStickY,
                 0f,
                 0f,
-                0f,
-                0f
+                hatX,
+                hatY
             )
         }
     }
@@ -520,9 +571,9 @@ class MainActivity : AppCompatActivity() {
             (event.source and InputDevice.SOURCE_JOYSTICK) == InputDevice.SOURCE_JOYSTICK
 
         if (isGamepadKey && binding.launcherOverlay.visibility != View.VISIBLE) {
-            val targetId = activeTopDisplayId
+            val targetId = primaryDisplayId
             if (targetId > 0) {
-                ioExecutor.execute {
+                inputExecutor.execute {
                     userService?.injectKeyEvent(
                         targetId,
                         event.action,
@@ -545,7 +596,7 @@ class MainActivity : AppCompatActivity() {
             (event.source and InputDevice.SOURCE_GAMEPAD) == InputDevice.SOURCE_GAMEPAD
 
         if (isJoystick && binding.launcherOverlay.visibility != View.VISIBLE) {
-            val targetId = activeTopDisplayId
+            val targetId = primaryDisplayId
             if (targetId > 0) {
                 val ax = event.getAxisValue(MotionEvent.AXIS_X)
                 val ay = event.getAxisValue(MotionEvent.AXIS_Y)
@@ -556,7 +607,7 @@ class MainActivity : AppCompatActivity() {
                 val hx = event.getAxisValue(MotionEvent.AXIS_HAT_X)
                 val hy = event.getAxisValue(MotionEvent.AXIS_HAT_Y)
 
-                ioExecutor.execute {
+                inputExecutor.execute {
                     userService?.injectJoystickEvent(
                         targetId,
                         event.downTime,
@@ -846,5 +897,6 @@ class MainActivity : AppCompatActivity() {
         inputManager.unregisterInputDeviceListener(inputDeviceListener)
         teardownShizukuDisplays()
         ioExecutor.shutdownNow()
+        inputExecutor.shutdownNow()
     }
 }

@@ -267,6 +267,20 @@ class VirtualDisplayUserService(private val baseContext: Context) : IVirtualDisp
         }
     }
 
+    override fun focusDisplay(displayId: Int) {
+        val atm = activityTaskManager ?: return
+        try {
+            val tasks = getTasksOnDisplay(displayId)
+            val topTaskId = tasks.firstOrNull()?.let { extractTaskId(it) } ?: -1
+            if (topTaskId > 0) {
+                val focusMethod = atm.javaClass.getMethod("setFocusedRootTask", Int::class.javaPrimitiveType)
+                focusMethod.invoke(atm, topTaskId)
+            }
+        } catch (e: Throwable) {
+            log("focusDisplay($displayId) failed", e)
+        }
+    }
+
     override fun injectTouchEvent(
         displayId: Int,
         action: Int,
@@ -321,6 +335,26 @@ class VirtualDisplayUserService(private val baseContext: Context) : IVirtualDisp
         }
     }
 
+    private fun linuxScanCodeForKey(keyCode: Int): Int = when (keyCode) {
+        KeyEvent.KEYCODE_DPAD_UP -> 103
+        KeyEvent.KEYCODE_DPAD_LEFT -> 105
+        KeyEvent.KEYCODE_DPAD_RIGHT -> 106
+        KeyEvent.KEYCODE_DPAD_DOWN -> 108
+        KeyEvent.KEYCODE_BUTTON_A -> 304
+        KeyEvent.KEYCODE_BUTTON_B -> 305
+        KeyEvent.KEYCODE_BUTTON_X -> 307
+        KeyEvent.KEYCODE_BUTTON_Y -> 308
+        KeyEvent.KEYCODE_BUTTON_L1 -> 310
+        KeyEvent.KEYCODE_BUTTON_R1 -> 311
+        KeyEvent.KEYCODE_BUTTON_L2 -> 312
+        KeyEvent.KEYCODE_BUTTON_R2 -> 313
+        KeyEvent.KEYCODE_BUTTON_SELECT -> 314
+        KeyEvent.KEYCODE_BUTTON_START -> 315
+        KeyEvent.KEYCODE_BUTTON_THUMBL -> 317
+        KeyEvent.KEYCODE_BUTTON_THUMBR -> 318
+        else -> 0
+    }
+
     override fun injectKeyEvent(
         displayId: Int,
         action: Int,
@@ -333,7 +367,7 @@ class VirtualDisplayUserService(private val baseContext: Context) : IVirtualDisp
     ) {
         if (displayId <= 0) return
         try {
-            val effectiveSource = if (source != 0) source else InputDevice.SOURCE_GAMEPAD
+            val effectiveSource = if (source != 0) source else (InputDevice.SOURCE_GAMEPAD or InputDevice.SOURCE_DPAD)
             val event = KeyEvent(
                 downTime,
                 eventTime,
@@ -341,8 +375,8 @@ class VirtualDisplayUserService(private val baseContext: Context) : IVirtualDisp
                 keyCode,
                 repeatCount,
                 metaState,
-                -1,
                 0,
+                linuxScanCodeForKey(keyCode),
                 KeyEvent.FLAG_FROM_SYSTEM,
                 effectiveSource
             )
