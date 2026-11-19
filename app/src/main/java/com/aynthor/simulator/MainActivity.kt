@@ -105,7 +105,7 @@ class MainActivity : AppCompatActivity() {
             .daemon(false)
             .processNameSuffix("virtual_display_service")
             .debuggable(false)
-            .version(23)
+            .version(24)
     }
 
     private val serviceConnection = object : ServiceConnection {
@@ -519,10 +519,27 @@ class MainActivity : AppCompatActivity() {
             return
         }
 
+        // Also update HAT axes when D-pad is pressed so games reading either KeyEvent or HAT work
+        when (keyCode) {
+            KeyEvent.KEYCODE_DPAD_LEFT -> hatX = if (isDown) -1f else if (hatX < 0f) 0f else hatX
+            KeyEvent.KEYCODE_DPAD_RIGHT -> hatX = if (isDown) 1f else if (hatX > 0f) 0f else hatX
+            KeyEvent.KEYCODE_DPAD_UP -> hatY = if (isDown) -1f else if (hatY < 0f) 0f else hatY
+            KeyEvent.KEYCODE_DPAD_DOWN -> hatY = if (isDown) 1f else if (hatY > 0f) 0f else hatY
+            KeyEvent.KEYCODE_BUTTON_L2 -> lTrigger = if (isDown) 1f else 0f
+            KeyEvent.KEYCODE_BUTTON_R2 -> rTrigger = if (isDown) 1f else 0f
+        }
+
         val source = if (keyCode in KeyEvent.KEYCODE_DPAD_UP..KeyEvent.KEYCODE_DPAD_RIGHT) {
             InputDevice.SOURCE_DPAD or InputDevice.SOURCE_GAMEPAD
         } else {
             InputDevice.SOURCE_GAMEPAD
+        }
+
+        if (keyCode in KeyEvent.KEYCODE_DPAD_UP..KeyEvent.KEYCODE_DPAD_RIGHT ||
+            keyCode == KeyEvent.KEYCODE_BUTTON_L2 ||
+            keyCode == KeyEvent.KEYCODE_BUTTON_R2
+        ) {
+            sendVirtualJoystick()
         }
 
         inputExecutor.execute {

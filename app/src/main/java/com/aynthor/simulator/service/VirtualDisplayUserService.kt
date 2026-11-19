@@ -83,8 +83,6 @@ class VirtualDisplayUserService(private val baseContext: Context) : IVirtualDisp
 
     private var topDisplay: VirtualDisplay? = null
     private val uinputGamepad = UinputGamepad { msg -> log(msg) }
-    @Volatile private var uinputDisplayAssociated = false
-    @Volatile private var associatedDescriptor: String? = null
     private var lastStickLogTime = 0L
     private var bottomDisplay: VirtualDisplay? = null
 
@@ -207,41 +205,10 @@ class VirtualDisplayUserService(private val baseContext: Context) : IVirtualDisp
         )
 
         uinputGamepad.start()
-        associateUinputToTopDisplay()
         val topId = topDisplay?.display?.displayId ?: -1
         val bottomId = bottomDisplay?.display?.displayId ?: -1
         log("createDisplays result: topId=$topId, bottomId=$bottomId")
         return intArrayOf(topId, bottomId)
-    }
-
-    private fun associateUinputToTopDisplay() {
-        uinputDisplayAssociated = false
-        associatedDescriptor = null
-        val disp = topDisplay?.display ?: return
-        val desc = uinputGamepad.getDescriptor()
-        if (desc.isNullOrEmpty()) {
-            log("uinput descriptor unavailable; skipping display association")
-            return
-        }
-        try {
-            val getUniqueIdMethod = disp.javaClass.getMethod("getUniqueId")
-            val uniqueId = getUniqueIdMethod.invoke(disp) as? String
-            if (uniqueId.isNullOrEmpty()) {
-                log("topDisplay uniqueId unavailable; skipping display association")
-                return
-            }
-            val addAssoc = InputManager::class.java.getMethod(
-                "addUniqueIdAssociationByDescriptor",
-                String::class.java,
-                String::class.java
-            )
-            addAssoc.invoke(inputManager, desc, uniqueId)
-            associatedDescriptor = desc
-            uinputDisplayAssociated = true
-            log("Associated uinput ($desc) -> topDisplay ($uniqueId)")
-        } catch (e: Throwable) {
-            log("addUniqueIdAssociationByDescriptor failed; using InputManager fallback", e)
-        }
     }
 
     private fun createVirtualDisplayWithFallback(
@@ -450,9 +417,6 @@ class VirtualDisplayUserService(private val baseContext: Context) : IVirtualDisp
         axisHatY: Float
     ) {
         if (displayId <= 0) return
-        if (uinputDisplayAssociated && uinputGamepad.sendAxes(axisX, axisY, axisZ, axisRz)) {
-            return
-        }
         var event: MotionEvent? = null
         try {
             val properties = arrayOf(
@@ -550,17 +514,6 @@ class VirtualDisplayUserService(private val baseContext: Context) : IVirtualDisp
     }
 
     override fun releaseDisplays() {
-        val desc = associatedDescriptor
-        if (uinputDisplayAssociated && !desc.isNullOrEmpty()) {
-            try {
-                InputManager::class.java.getMethod(
-                    "removeUniqueIdAssociationByDescriptor",
-                    String::class.java
-                ).invoke(inputManager, desc)
-            } catch (_: Throwable) {}
-        }
-        uinputDisplayAssociated = false
-        associatedDescriptor = null
         uinputGamepad.stop()
         try {
             topDisplay?.release()
@@ -695,7 +648,7 @@ class VirtualDisplayUserService(private val baseContext: Context) : IVirtualDisp
     }
 
     override fun getDebugLog(): String {
-        return uinputGamepad.statusSummary + " | assoc=" + uinputDisplayAssociated + "\n" + logLines.joinToString("\n")
+        return uinputGamepad.statusSummary + "\n" + logLines.joinToString("\n")
     }
 
     override fun destroy() {
