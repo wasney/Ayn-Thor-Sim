@@ -183,10 +183,12 @@ class VirtualThumbstickView @JvmOverloads constructor(
     var onStickMove: ((axisX: Float, axisY: Float) -> Unit)? = null
 
     private var activePointerId = MotionEvent.INVALID_POINTER_ID
+    private var anchorX = 0f
+    private var anchorY = 0f
     private var knobX = 0f
     private var knobY = 0f
-    private var normX = 0f
-    private var normY = 0f
+    private var lastSentX = 0f
+    private var lastSentY = 0f
 
     private val basePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = Color.parseColor("#1D1D22")
@@ -208,19 +210,19 @@ class VirtualThumbstickView @JvmOverloads constructor(
 
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
         super.onSizeChanged(w, h, oldw, oldh)
-        knobX = w / 2f
-        knobY = h / 2f
+        anchorX = w / 2f
+        anchorY = h / 2f
+        knobX = anchorX
+        knobY = anchorY
     }
 
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
-        val cx = width / 2f
-        val cy = height / 2f
-        val outerR = minOf(width, height) * 0.42f
-        val knobR = outerR * 0.45f
+        val outerR = maxOf(minOf(width, height) * 0.40f, 52f)
+        val knobR = outerR * 0.42f
 
-        canvas.drawCircle(cx, cy, outerR, basePaint)
-        canvas.drawCircle(cx, cy, outerR, ringPaint)
+        canvas.drawCircle(anchorX, anchorY, outerR, basePaint)
+        canvas.drawCircle(anchorX, anchorY, outerR, ringPaint)
         canvas.drawCircle(
             knobX,
             knobY,
@@ -231,9 +233,7 @@ class VirtualThumbstickView @JvmOverloads constructor(
 
     @SuppressLint("ClickableViewAccessibility")
     override fun onTouchEvent(event: MotionEvent): Boolean {
-        val cx = width / 2f
-        val cy = height / 2f
-        val maxDist = minOf(width, height) * 0.36f
+        val maxDist = maxOf(minOf(width, height) * 0.38f, 64f)
 
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN, MotionEvent.ACTION_POINTER_DOWN -> {
@@ -241,24 +241,30 @@ class VirtualThumbstickView @JvmOverloads constructor(
                 if (activePointerId == MotionEvent.INVALID_POINTER_ID) {
                     val idx = event.actionIndex
                     activePointerId = event.getPointerId(idx)
-                    updateStick(event.getX(idx), event.getY(idx), cx, cy, maxDist)
+                    // Floating origin: wherever the user taps becomes the center (0, 0)
+                    anchorX = event.getX(idx)
+                    anchorY = event.getY(idx)
+                    knobX = anchorX
+                    knobY = anchorY
+                    emitIfChanged(0f, 0f)
+                    invalidate()
                 }
             }
             MotionEvent.ACTION_MOVE -> {
                 val idx = event.findPointerIndex(activePointerId)
                 if (idx >= 0) {
-                    updateStick(event.getX(idx), event.getY(idx), cx, cy, maxDist)
+                    updateStick(event.getX(idx), event.getY(idx), maxDist)
                 }
             }
             MotionEvent.ACTION_UP, MotionEvent.ACTION_POINTER_UP, MotionEvent.ACTION_CANCEL -> {
                 val idx = event.actionIndex
                 if (event.getPointerId(idx) == activePointerId || event.actionMasked == MotionEvent.ACTION_CANCEL) {
                     activePointerId = MotionEvent.INVALID_POINTER_ID
-                    knobX = cx
-                    knobY = cy
-                    normX = 0f
-                    normY = 0f
-                    onStickMove?.invoke(0f, 0f)
+                    anchorX = width / 2f
+                    anchorY = height / 2f
+                    knobX = anchorX
+                    knobY = anchorY
+                    emitIfChanged(0f, 0f)
                     invalidate()
                 }
             }
@@ -266,25 +272,42 @@ class VirtualThumbstickView @JvmOverloads constructor(
         return true
     }
 
-    private fun updateStick(x: Float, y: Float, cx: Float, cy: Float, maxDist: Float) {
+    private fun updateStick(x: Float, y: Float, maxDist: Float) {
         if (maxDist <= 0f) return
-        val dx = x - cx
-        val dy = y - cy
+        val dx = x - anchorX
+        val dy = y - anchorY
         val dist = hypot(dx, dy)
-        if (dist > maxDist) {
+        val deadzone = maxDist * 0.06f
+
+        val nx: Float
+        val ny: Float
+        if (dist <= deadzone) {
+            knobX = x
+            knobY = y
+            nx = 0f
+            ny = 0f
+        } else if (dist > maxDist) {
             val angle = atan2(dy, dx)
-            knobX = cx + cos(angle) * maxDist
-            knobY = cy + sin(angle) * maxDist
-            normX = cos(angle)
-            normY = sin(angle)
+            knobX = anchorX + cos(angle) * maxDist
+            knobY = anchorY + sin(angle) * maxDist
+            nx = cos(angle)
+            ny = sin(angle)
         } else {
             knobX = x
             knobY = y
-            normX = (dx / maxDist).coerceIn(-1f, 1f)
-            normY = (dy / maxDist).coerceIn(-1f, 1f)
+            nx = (dx / maxDist).coerceIn(-1f, 1f)
+            ny = (dy / maxDist).coerceIn(-1f, 1f)
         }
-        onStickMove?.invoke(normX, normY)
+        emitIfChanged(nx, ny)
         invalidate()
+    }
+
+    private fun emitIfChanged(nx: Float, ny: Float) {
+        if (nx != lastSentX || ny != lastSentY) {
+            lastSentX = nx
+            lastSentY = ny
+            onStickMove?.invoke(nx, ny)
+        }
     }
 }
 

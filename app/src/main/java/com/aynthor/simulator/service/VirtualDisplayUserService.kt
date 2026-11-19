@@ -81,6 +81,7 @@ class VirtualDisplayUserService(private val baseContext: Context) : IVirtualDisp
     }
 
     private var topDisplay: VirtualDisplay? = null
+    private var lastStickLogTime = 0L
     private var bottomDisplay: VirtualDisplay? = null
 
     private val displayManager: DisplayManager by lazy {
@@ -464,6 +465,14 @@ class VirtualDisplayUserService(private val baseContext: Context) : IVirtualDisp
             val ok = injectInputEventMethod?.invoke(inputManager, event, INJECT_INPUT_EVENT_MODE_ASYNC) as? Boolean
             if (event is KeyEvent) {
                 log("injectKey(${KeyEvent.keyCodeToString(event.keyCode)}, act=${event.action}, disp=$displayId) -> $ok")
+            } else if (event is MotionEvent && (event.source and InputDevice.SOURCE_JOYSTICK) == InputDevice.SOURCE_JOYSTICK) {
+                val now = System.currentTimeMillis()
+                val x = event.getAxisValue(MotionEvent.AXIS_X)
+                val y = event.getAxisValue(MotionEvent.AXIS_Y)
+                if (ok == false || (x == 0f && y == 0f) || now - lastStickLogTime > 250L) {
+                    lastStickLogTime = now
+                    log("injectJoy(x=${"%.2f".format(x)}, y=${"%.2f".format(y)}, disp=$displayId) -> $ok")
+                }
             } else if (ok == false) {
                 log("injectMotion(src=0x${Integer.toHexString(event.source)}, disp=$displayId) -> false")
             }

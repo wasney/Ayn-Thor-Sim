@@ -55,7 +55,8 @@ class MainActivity : AppCompatActivity() {
 
     private val ioExecutor = Executors.newSingleThreadExecutor()
     private val inputExecutor = Executors.newSingleThreadExecutor()
-    private val joystickPending = AtomicBoolean(false)
+    private val joystickRunning = AtomicBoolean(false)
+    private val joystickDirty = AtomicBoolean(false)
     private var lastBottomTouchTime = 0L
 
     private var userService: IVirtualDisplayService? = null
@@ -103,7 +104,7 @@ class MainActivity : AppCompatActivity() {
             .daemon(false)
             .processNameSuffix("virtual_display_service")
             .debuggable(false)
-            .version(13)
+            .version(14)
     }
 
     private val serviceConnection = object : ServiceConnection {
@@ -565,35 +566,44 @@ class MainActivity : AppCompatActivity() {
             return
         }
         val isCentered = leftStickX == 0f && leftStickY == 0f && rightStickX == 0f && rightStickY == 0f && lTrigger == 0f && rTrigger == 0f
-        if (!force && !isCentered && !joystickPending.compareAndSet(false, true)) return
-
         if (isCentered) {
             stickDownTime = 0L
         } else if (stickDownTime == 0L) {
             stickDownTime = SystemClock.uptimeMillis()
         }
 
+        joystickDirty.set(true)
+        if (!force && !joystickRunning.compareAndSet(false, true)) return
+
         inputExecutor.execute {
-            joystickPending.set(false)
-            val now = SystemClock.uptimeMillis()
-            val dTime = if (stickDownTime != 0L) stickDownTime else now
-            if (lastBottomTouchTime > 0L) {
-                lastBottomTouchTime = 0L
-                userService?.focusDisplay(targetId)
+            try {
+                while (joystickDirty.getAndSet(false)) {
+                    val now = SystemClock.uptimeMillis()
+                    val dTime = if (stickDownTime != 0L) stickDownTime else now
+                    if (lastBottomTouchTime > 0L) {
+                        lastBottomTouchTime = 0L
+                        userService?.focusDisplay(targetId)
+                    }
+                    userService?.injectJoystickEvent(
+                        targetId,
+                        dTime,
+                        now,
+                        leftStickX,
+                        leftStickY,
+                        rightStickX,
+                        rightStickY,
+                        lTrigger,
+                        rTrigger,
+                        hatX,
+                        hatY
+                    )
+                }
+            } finally {
+                joystickRunning.set(false)
+                if (joystickDirty.get()) {
+                    sendVirtualJoystick(force = false)
+                }
             }
-            userService?.injectJoystickEvent(
-                targetId,
-                dTime,
-                now,
-                leftStickX,
-                leftStickY,
-                rightStickX,
-                rightStickY,
-                lTrigger,
-                rTrigger,
-                hatX,
-                hatY
-            )
         }
     }
 
