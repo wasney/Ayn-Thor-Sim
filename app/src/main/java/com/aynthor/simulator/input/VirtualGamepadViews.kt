@@ -22,6 +22,7 @@ class VirtualDpadView @JvmOverloads constructor(
 ) : View(context, attrs, defStyleAttr) {
 
     var onKeyEvent: ((keyCode: Int, isDown: Boolean) -> Unit)? = null
+    var fourWayOnly: Boolean = false
 
     private var activePointerId = MotionEvent.INVALID_POINTER_ID
     private var upPressed = false
@@ -127,12 +128,20 @@ class VirtualDpadView @JvmOverloads constructor(
             setDirections(false, false, false, false)
             return
         }
+        if (fourWayOnly) {
+            if (kotlin.math.abs(dx) >= kotlin.math.abs(dy)) {
+                setDirections(u = false, d = false, l = dx < 0f, r = dx >= 0f)
+            } else {
+                setDirections(u = dy < 0f, d = dy >= 0f, l = false, r = false)
+            }
+            return
+        }
         val angle = Math.toDegrees(atan2(dy.toDouble(), dx.toDouble()))
-        // 8-way directional sectors
-        val r = angle > -67.5 && angle < 67.5
-        val d = angle > 22.5 && angle < 157.5
-        val l = angle > 112.5 || angle < -112.5
-        val u = angle < -22.5 && angle > -157.5
+        // 8-way directional sectors with slightly crisper cardinal zones (30 deg diagonals)
+        val r = angle > -60.0 && angle < 60.0
+        val d = angle > 30.0 && angle < 150.0
+        val l = angle > 120.0 || angle < -120.0
+        val u = angle < -30.0 && angle > -150.0
         setDirections(u, d, l, r)
     }
 

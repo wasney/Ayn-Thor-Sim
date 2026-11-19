@@ -168,6 +168,7 @@ class MainActivity : AppCompatActivity() {
     @Volatile private var stickDownTime = 0L
     private val keyDownTimes = mutableMapOf<Int, Long>()
     private val keyRepeatRunnables = mutableMapOf<Int, Runnable>()
+    private val pendingKeyUpRunnables = mutableMapOf<Int, Runnable>()
     private val localLogs = java.util.concurrent.CopyOnWriteArrayList<String>()
 
     private fun addLocalLog(msg: String) {
@@ -190,7 +191,7 @@ class MainActivity : AppCompatActivity() {
             .daemon(false)
             .processNameSuffix("virtual_display_service")
             .debuggable(false)
-            .version(45)
+            .version(46)
     }
 
     private val serviceConnection = object : ServiceConnection {
@@ -984,6 +985,7 @@ class MainActivity : AppCompatActivity() {
     private fun applyGamepadAppearance() {
         val alpha = prefs.getGamepadOpacity()
         val scale = prefs.getGamepadScale()
+        binding.virtualDpad.fourWayOnly = prefs.isDpadFourWayOnly()
         binding.leftGamepadContainer.alpha = alpha
         binding.rightGamepadContainer.alpha = alpha
         for (v in listOf(binding.virtualDpad, binding.leftStickWrapper, binding.virtualFaceButtons, binding.rightStickWrapper)) {
@@ -994,14 +996,39 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun handleVirtualKey(keyCode: Int, isDown: Boolean) {
-        if (isDown && prefs.isHapticsEnabled()) {
-            binding.rootLayout.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
-        }
         val now = SystemClock.uptimeMillis()
+        if (isDown) {
+            // Cancel any pending delayed release for this same key so rapid re-taps register cleanly
+            pendingKeyUpRunnables.remove(keyCode)?.let { uiHandler.removeCallbacks(it) }
+            if (prefs.isHapticsEnabled()) {
+                binding.rootLayout.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+            }
+            keyDownTimes[keyCode] = now
+        } else {
+            val startedAt = keyDownTimes[keyCode]
+            if (startedAt != null) {
+                val heldMs = now - startedAt
+                if (heldMs in 0L until 35L) {
+                    // Enforce a 35ms minimum hold floor (>2 frames at 60 FPS) so ultra-short
+                    // touchscreen taps (12-24ms) never fall between emulator input polls.
+                    pendingKeyUpRunnables.remove(keyCode)?.let { uiHandler.removeCallbacks(it) }
+                    val delayedUp = Runnable {
+                        pendingKeyUpRunnables.remove(keyCode)
+                        handleVirtualKeyImmediate(keyCode, isDown = false, now = SystemClock.uptimeMillis())
+                    }
+                    pendingKeyUpRunnables[keyCode] = delayedUp
+                    uiHandler.postDelayed(delayedUp, 35L - heldMs)
+                    return
+                }
+            }
+        }
+        handleVirtualKeyImmediate(keyCode, isDown, now)
+    }
+
+    private fun handleVirtualKeyImmediate(keyCode: Int, isDown: Boolean, now: Long) {
         val action = if (isDown) KeyEvent.ACTION_DOWN else KeyEvent.ACTION_UP
         val downTime = if (isDown) {
-            keyDownTimes[keyCode] = now
-            now
+            keyDownTimes[keyCode] ?: now
         } else {
             keyDownTimes.remove(keyCode) ?: now
         }
@@ -2101,9 +2128,14 @@ class MainActivity : AppCompatActivity() {
             text = "Fast Kernel Gamepad (uinput — avoids 5s Android input stalls)"
             isChecked = prefs.isUseKernelGamepad()
         }
+        val cbFourWay = CheckBox(this).apply {
+            text = "4-Way D-Pad Only (prevents accidental diagonals in menus)"
+            isChecked = prefs.isDpadFourWayOnly()
+        }
         container.addView(cbL3R3)
         container.addView(cbHaptics)
         container.addView(cbKernelPad)
+        container.addView(cbFourWay)
 
         val curOpacityPct = (prefs.getGamepadOpacity() * 100f).toInt().coerceIn(25, 100)
         val tvOpacity = TextView(this).apply {
@@ -2157,6 +2189,7 @@ class MainActivity : AppCompatActivity() {
                 prefs.setShowL3R3(cbL3R3.isChecked)
                 prefs.setHapticsEnabled(cbHaptics.isChecked)
                 prefs.setUseKernelGamepad(cbKernelPad.isChecked)
+                prefs.setDpadFourWayOnly(cbFourWay.isChecked)
                 prefs.setGamepadOpacity((seekOpacity.progress + 25) / 100f)
                 prefs.setGamepadScale((seekScale.progress + 75) / 100f)
                 applyGamepadAppearance()
@@ -2393,6 +2426,7 @@ class MainActivity : AppCompatActivity() {
         super.onPause()
         // Release any held virtual keys so nothing stays stuck when switching apps
         keyRepeatRunnables.values.forEach { uiHandler.removeCallbacks(it) }
+        pendingKeyUpRunnables.values.forEach { uiHandler.removeCallbacks(it) }
         keyRepeatRunnables.clear()
         val heldKeys = keyDownTimes.keys.toList()
         for (kc in heldKeys) {

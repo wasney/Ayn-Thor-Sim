@@ -48,6 +48,7 @@ class SimulatorPrefs(context: Context) {
         private const val KEY_HAPTICS_ENABLED = "haptics_enabled"
         private const val KEY_SHOW_L3_R3 = "show_l3_r3"
         private const val KEY_USE_KERNEL_GAMEPAD = "use_kernel_gamepad"
+        private const val KEY_DPAD_FOUR_WAY = "dpad_four_way"
         private const val KEY_PROFILE_PACKAGES = "app_profile_packages"
         private const val PREFIX_APP_PROFILE = "app_profile_"
 
@@ -295,6 +296,9 @@ class SimulatorPrefs(context: Context) {
     fun isUseKernelGamepad(): Boolean = prefs.getBoolean(KEY_USE_KERNEL_GAMEPAD, true)
     fun setUseKernelGamepad(enabled: Boolean) = prefs.edit().putBoolean(KEY_USE_KERNEL_GAMEPAD, enabled).apply()
 
+    fun isDpadFourWayOnly(): Boolean = prefs.getBoolean(KEY_DPAD_FOUR_WAY, false)
+    fun setDpadFourWayOnly(enabled: Boolean) = prefs.edit().putBoolean(KEY_DPAD_FOUR_WAY, enabled).apply()
+
     // --- Per-App Launch & Layout Profiles ---
     data class AppProfile(
         val splitPercent: Float? = null,
@@ -370,6 +374,8 @@ class SimulatorPrefs(context: Context) {
         root.put("gamepadScale", getGamepadScale().toDouble())
         root.put("hapticsEnabled", isHapticsEnabled())
         root.put("showL3R3", isShowL3R3())
+        root.put("useKernelGamepad", isUseKernelGamepad())
+        root.put("dpadFourWay", isDpadFourWayOnly())
 
         root.put("hiddenPackages", JSONArray(getHiddenPackages().toList()))
         root.put("dualScreenAdded", JSONArray((prefs.getStringSet(KEY_DUAL_SCREEN_ADDED, emptySet()) ?: emptySet()).toList()))
@@ -425,6 +431,8 @@ class SimulatorPrefs(context: Context) {
             if (root.has("gamepadScale")) ed.putFloat(KEY_GAMEPAD_SCALE, root.getDouble("gamepadScale").toFloat().coerceIn(0.75f, 1.25f))
             if (root.has("hapticsEnabled")) ed.putBoolean(KEY_HAPTICS_ENABLED, root.getBoolean("hapticsEnabled"))
             if (root.has("showL3R3")) ed.putBoolean(KEY_SHOW_L3_R3, root.getBoolean("showL3R3"))
+            if (root.has("useKernelGamepad")) ed.putBoolean(KEY_USE_KERNEL_GAMEPAD, root.getBoolean("useKernelGamepad"))
+            if (root.has("dpadFourWay")) ed.putBoolean(KEY_DPAD_FOUR_WAY, root.getBoolean("dpadFourWay"))
 
             fun readSet(arr: JSONArray?): Set<String> {
                 if (arr == null) return emptySet()

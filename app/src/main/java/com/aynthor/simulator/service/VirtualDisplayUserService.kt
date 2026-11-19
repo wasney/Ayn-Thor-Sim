@@ -480,9 +480,12 @@ class VirtualDisplayUserService(private val baseContext: Context) : IVirtualDisp
             val isDown = action == KeyEvent.ACTION_DOWN
             if (isDown) {
                 val nowMs = System.currentTimeMillis()
-                if (nowMs - lastFocusTimeMs >= 150L) {
+                if (nowMs - lastFocusTimeMs >= 250L) {
                     lastFocusTimeMs = nowMs
                     ensureFocusedCached(displayId)
+                    // Give WindowManager ~8ms to finish switching focus from Display 0 on the
+                    // first tap after a pause so the very first key press never lands early.
+                    try { Thread.sleep(8L) } catch (_: Throwable) {}
                 }
             }
             val ok = uinputGamepad.sendKey(keyCode, isDown)
