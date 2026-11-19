@@ -16,10 +16,11 @@ jobs:
 
       - name: Unpack zip if present
         run: |
-          ZIP_FILE=$(ls AynThorSimulator*.zip 2>/dev/null | head -n 1 || true)
+          ZIP_FILE=$(ls DroiDS*.zip AynThorSimulator*.zip 2>/dev/null | head -n 1 || true)
           if [ -n "$ZIP_FILE" ]; then
             unzip -o "$ZIP_FILE" -x ".github/*"
-            rm -f AynThorSimulator*.zip
+            rm -f DroiDS*.zip 
+AynThorSimulator*.zip
             git config user.name "github-actions[bot]"
             git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
             git add -A
@@ -35,7 +36,8 @@ jobs:
         with:
           packages: 'platforms;android-35 build-tools;35.0.0'
 
-      - uses: gradle/actions/setup-gradle@v4
+      - uses: 
+gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
 
@@ -47,14 +49,15 @@ jobs:
           chmod +x gradlew
           ./gradlew assembleDebug --stacktrace
           VERSION_NAME=$(grep -oE 'versionName\s*=\s*"[^"]+"' app/build.gradle.kts | head -n1 | sed -E 's/.*"([^"]+)"/\1/')
-          VERSION_NAME=${VERSION_NAME:-"1.0.0"}
-          echo "APP_VERSION=$VERSION_NAME" >> "$GITHUB_ENV"
+          VERSION_NAME=${VERSION_NAME:-"2.0.0"}
+          echo "APP_VERSION=$VERSION_NAME" >> 
+"$GITHUB_ENV"
           mkdir -p release_apks
-          cp app/build/outputs/apk/debug/app-debug.apk "release_apks/AynThorSimulator-v${VERSION_NAME}-debug.apk"
+          cp app/build/outputs/apk/debug/app-debug.apk "release_apks/DroiDS-v${VERSION_NAME}-debug.apk"
 
       - uses: actions/upload-artifact@v4
         with:
-          name: AynThorSimulator-v${{ env.APP_VERSION }}-debug-apk
+          name: DroiDS-v${{ env.APP_VERSION }}-debug-apk
           path: release_apks/*.apk
           if-no-files-found: error
 
@@ -62,6 +65,6 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ env.APP_VERSION }}-b${{ github.run_number }}
-          name: AynThorSimulator v${{ env.APP_VERSION }} (Build #${{ github.run_number }})
+          name: DroiDS v${{ env.APP_VERSION }} (Build #${{ github.run_number }})
           files: release_apks/*.apk
           generate_release_notes: true
