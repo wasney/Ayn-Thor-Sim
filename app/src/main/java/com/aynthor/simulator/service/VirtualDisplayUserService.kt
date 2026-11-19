@@ -81,6 +81,7 @@ class VirtualDisplayUserService(private val baseContext: Context) : IVirtualDisp
     }
 
     private var topDisplay: VirtualDisplay? = null
+    private val uhidGamepad = UhidGamepad { msg -> log(msg) }
     private var bottomDisplay: VirtualDisplay? = null
 
     private val displayManager: DisplayManager by lazy {
@@ -201,6 +202,7 @@ class VirtualDisplayUserService(private val baseContext: Context) : IVirtualDisp
             )
         )
 
+        uhidGamepad.open()
         val topId = topDisplay?.display?.displayId ?: -1
         val bottomId = bottomDisplay?.display?.displayId ?: -1
         log("createDisplays result: topId=$topId, bottomId=$bottomId")
@@ -355,6 +357,10 @@ class VirtualDisplayUserService(private val baseContext: Context) : IVirtualDisp
         else -> 0
     }
 
+    private fun shouldUseUhid(source: Int): Boolean {
+        return uhidGamepad.isOpen && (source == 0 || (source and InputDevice.SOURCE_GAMEPAD) == InputDevice.SOURCE_GAMEPAD || (source and InputDevice.SOURCE_DPAD) == InputDevice.SOURCE_DPAD)
+    }
+
     override fun injectKeyEvent(
         displayId: Int,
         action: Int,
@@ -366,6 +372,10 @@ class VirtualDisplayUserService(private val baseContext: Context) : IVirtualDisp
         source: Int
     ) {
         if (displayId <= 0) return
+        if (shouldUseUhid(source)) {
+            uhidGamepad.updateKey(keyCode, action == KeyEvent.ACTION_DOWN)
+            return
+        }
         try {
             val effectiveSource = if (source != 0) source else (InputDevice.SOURCE_GAMEPAD or InputDevice.SOURCE_DPAD)
             val gamepadDevId = InputDevice.getDeviceIds().firstOrNull { id ->
@@ -407,6 +417,10 @@ class VirtualDisplayUserService(private val baseContext: Context) : IVirtualDisp
         axisHatY: Float
     ) {
         if (displayId <= 0) return
+        if (uhidGamepad.isOpen) {
+            uhidGamepad.updateAxes(axisX, axisY, axisZ, axisRz)
+            return
+        }
         var event: MotionEvent? = null
         try {
             val properties = arrayOf(
@@ -496,6 +510,7 @@ class VirtualDisplayUserService(private val baseContext: Context) : IVirtualDisp
     }
 
     override fun releaseDisplays() {
+        uhidGamepad.close()
         try {
             topDisplay?.release()
         } catch (_: Throwable) {
