@@ -14,22 +14,39 @@
         android:orientation="horizontal"
         app:layout_constraintGuide_percent="0.53" />
 
+    <!-- Permanent SurfaceViews as direct children of rootLayout so visual swapping moves their
+         ConstraintLayout bounds without ever detaching or recreating VirtualDisplay Surfaces -->
+    <com.aynthor.simulator.input.DisplaySurfaceView
+        android:id="@+id/topSurfaceView"
+        android:layout_width="0dp"
+        android:layout_height="0dp"
+        app:layout_constraintBottom_toBottomOf="@id/topScreenContainer"
+        app:layout_constraintDimensionRatio="16:9"
+        app:layout_constraintEnd_toEndOf="@id/topScreenContainer"
+        app:layout_constraintStart_toStartOf="@id/topScreenContainer"
+        app:layout_constraintTop_toTopOf="@id/topScreenContainer" />
+
+    <com.aynthor.simulator.input.DisplaySurfaceView
+        android:id="@+id/bottomSurfaceView"
+        android:layout_width="0dp"
+        android:layout_height="0dp"
+        app:layout_constraintBottom_toBottomOf="@id/bottomScreenContainer"
+        app:layout_constraintDimensionRatio="1240:1080"
+        app:layout_constraintEnd_toEndOf="@id/bottomScreenContainer"
+        app:layout_constraintStart_toStartOf="@id/bottomScreenContainer"
+        app:layout_constraintTop_toTopOf="@id/bottomScreenContainer" />
+
     <!-- Top Half: 16:9 Screen pinned to top-center -->
     <FrameLayout
         android:id="@+id/topScreenContainer"
         android:layout_width="0dp"
         android:layout_height="0dp"
-        android:background="#08080A"
+        android:background="@android:color/transparent"
         app:layout_constraintBottom_toTopOf="@id/splitGuideline"
         app:layout_constraintDimensionRatio="16:9"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toTopOf="parent">
-
-        <com.aynthor.simulator.input.DisplaySurfaceView
-            android:id="@+id/topSurfaceView"
-            android:layout_width="match_parent"
-            android:layout_height="match_parent" />
 
         <!-- Built-in Searchable, Folder-Enabled Top App Launcher Overlay -->
         <LinearLayout
@@ -174,17 +191,12 @@
         android:layout_height="0dp"
         android:layout_marginTop="4dp"
         android:layout_marginBottom="4dp"
-        android:background="#08080A"
+        android:background="@android:color/transparent"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintDimensionRatio="1240:1080"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toBottomOf="@id/splitGuideline">
-
-        <com.aynthor.simulator.input.DisplaySurfaceView
-            android:id="@+id/bottomSurfaceView"
-            android:layout_width="match_parent"
-            android:layout_height="match_parent" />
 
         <!-- Configurable Bottom Home Screen Dashboard -->
         <ScrollView

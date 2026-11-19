@@ -86,12 +86,6 @@ class MainActivity : AppCompatActivity() {
     private var isServiceBound = false
     private var topSurfaceReady = false
     private var bottomSurfaceReady = false
-    private var topSurfaceWidth = 0
-    private var topSurfaceHeight = 0
-    private var bottomSurfaceWidth = 0
-    private var bottomSurfaceHeight = 0
-    private var pendingSurfaceSwapCommit: Runnable? = null
-    private var pendingSurfaceSwapFallback: Runnable? = null
 
     private var primaryDisplayId = -1    // 1920x1080
     private var secondaryDisplayId = -1  // 1240x1080
@@ -149,7 +143,7 @@ class MainActivity : AppCompatActivity() {
             .daemon(false)
             .processNameSuffix("virtual_display_service")
             .debuggable(false)
-            .version(36)
+            .version(37)
     }
 
     private val serviceConnection = object : ServiceConnection {
@@ -271,15 +265,9 @@ class MainActivity : AppCompatActivity() {
                     topSurfaceReady = true
                     tryCreateVirtualDisplays()
                 }
-                override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) {
-                    topSurfaceWidth = width
-                    topSurfaceHeight = height
-                    maybeCommitPendingSurfaceSwap()
-                }
+                override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) {}
                 override fun surfaceDestroyed(holder: SurfaceHolder) {
                     topSurfaceReady = false
-                    topSurfaceWidth = 0
-                    topSurfaceHeight = 0
                 }
             })
         }
@@ -307,15 +295,9 @@ class MainActivity : AppCompatActivity() {
                     bottomSurfaceReady = true
                     tryCreateVirtualDisplays()
                 }
-                override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) {
-                    bottomSurfaceWidth = width
-                    bottomSurfaceHeight = height
-                    maybeCommitPendingSurfaceSwap()
-                }
+                override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) {}
                 override fun surfaceDestroyed(holder: SurfaceHolder) {
                     bottomSurfaceReady = false
-                    bottomSurfaceWidth = 0
-                    bottomSurfaceHeight = 0
                 }
             })
         }
@@ -1010,15 +992,10 @@ class MainActivity : AppCompatActivity() {
         val topSurface = binding.topSurfaceView.holder.surface
         val bottomSurface = binding.bottomSurfaceView.holder.surface
 
-        // If displays already exist (e.g. returning after minimizing), re-attach the newly created Surfaces
+        // If displays already exist (e.g. returning after minimizing), re-attach each display to its permanent SurfaceView
         if (primaryDisplayId > 0 && secondaryDisplayId > 0) {
-            val swapped = isSwapped
             ioExecutor.execute {
-                if (swapped) {
-                    service.swapSurfaces(bottomSurface, topSurface)
-                } else {
-                    service.swapSurfaces(topSurface, bottomSurface)
-                }
+                service.swapSurfaces(topSurface, bottomSurface)
             }
             return
         }
@@ -1045,9 +1022,12 @@ class MainActivity : AppCompatActivity() {
         val service = userService ?: return
         if (primaryDisplayId <= 0 || secondaryDisplayId <= 0) return
 
-        // If currently surface-swapped (dual-screen Presentation mode), restore normal mapping cleanly
+        // If currently visually swapped (dual-screen Presentation mode), restore layout constraints instantly
         if (isSwapped) {
-            applySurfaceSwap(swapped = false, toastMsg = "Restored top & bottom screens")
+            isSwapped = false
+            syncSurfaceMetadata()
+            addLocalLog("Visual swap restored (isSwapped=false)")
+            Toast.makeText(this, "Restored top & bottom screens", Toast.LENGTH_SHORT).show()
             return
         }
 
@@ -1062,132 +1042,67 @@ class MainActivity : AppCompatActivity() {
                     Toast.makeText(this, "Swapped top & bottom apps", Toast.LENGTH_SHORT).show()
                 } else {
                     // Single-task or dual-screen Presentation app (e.g. SeedlessDS, Azahar, DraStic):
-                    // resize SurfaceView buffers FIRST, then attach swapped virtual displays once surfaceChanged fires
+                    // reposition the two SurfaceViews via ConstraintLayout without touching VirtualDisplay surfaces!
+                    isSwapped = true
+                    syncSurfaceMetadata()
                     binding.etTopSearch.clearFocus(); binding.launcherOverlay.visibility = View.GONE
                     binding.bottomLauncherOverlay.visibility = View.GONE
                     binding.bottomHomeOverlay.visibility = View.GONE
-                    applySurfaceSwap(swapped = true, toastMsg = "Swapped top & bottom screens")
+                    addLocalLog("Visual swap enabled (isSwapped=true)")
+                    Toast.makeText(this, "Swapped top & bottom screens", Toast.LENGTH_SHORT).show()
                 }
             }
-        }
-    }
-
-    private fun applySurfaceSwap(swapped: Boolean, toastMsg: String) {
-        val service = userService ?: return
-        if (primaryDisplayId <= 0 || secondaryDisplayId <= 0) return
-
-        pendingSurfaceSwapFallback?.let { uiHandler.removeCallbacks(it) }
-        pendingSurfaceSwapFallback = null
-        pendingSurfaceSwapCommit = null
-
-        isSwapped = swapped
-        syncSurfaceMetadata()
-
-        val commit = Runnable {
-            pendingSurfaceSwapFallback?.let { uiHandler.removeCallbacks(it) }
-            pendingSurfaceSwapFallback = null
-            pendingSurfaceSwapCommit = null
-
-            val freshTopSurface = binding.topSurfaceView.holder.surface
-            val freshBottomSurface = binding.bottomSurfaceView.holder.surface
-            if (freshTopSurface != null && freshTopSurface.isValid &&
-                freshBottomSurface != null && freshBottomSurface.isValid
-            ) {
-                ioExecutor.execute {
-                    if (swapped) {
-                        service.swapSurfaces(freshBottomSurface, freshTopSurface)
-                    } else {
-                        service.swapSurfaces(freshTopSurface, freshBottomSurface)
-                    }
-                    service.focusDisplay(primaryDisplayId)
-                }
-            }
-        }
-
-        pendingSurfaceSwapCommit = commit
-        val fallback = Runnable {
-            pendingSurfaceSwapCommit?.run()
-        }
-        pendingSurfaceSwapFallback = fallback
-        uiHandler.postDelayed(fallback, 200L)
-
-        // If both surfaces already match their target fixed sizes, commit immediately
-        maybeCommitPendingSurfaceSwap()
-        Toast.makeText(this, toastMsg, Toast.LENGTH_SHORT).show()
-    }
-
-    private fun maybeCommitPendingSurfaceSwap() {
-        val commit = pendingSurfaceSwapCommit ?: return
-        val expectedTopW = if (isSwapped) BOTTOM_WIDTH else TOP_WIDTH
-        val expectedTopH = if (isSwapped) BOTTOM_HEIGHT else TOP_HEIGHT
-        val expectedBotW = if (isSwapped) TOP_WIDTH else BOTTOM_WIDTH
-        val expectedBotH = if (isSwapped) TOP_HEIGHT else BOTTOM_HEIGHT
-
-        if (topSurfaceWidth == expectedTopW && topSurfaceHeight == expectedTopH &&
-            bottomSurfaceWidth == expectedBotW && bottomSurfaceHeight == expectedBotH
-        ) {
-            commit.run()
         }
     }
 
     private fun syncSurfaceMetadata() {
-        if (isSwapped) {
-            binding.topSurfaceView.apply {
-                targetDisplayId = secondaryDisplayId
-                virtualWidth = BOTTOM_WIDTH
-                virtualHeight = BOTTOM_HEIGHT
-                holder.setFixedSize(BOTTOM_WIDTH, BOTTOM_HEIGHT)
-            }
-            binding.bottomSurfaceView.apply {
-                targetDisplayId = primaryDisplayId
-                virtualWidth = TOP_WIDTH
-                virtualHeight = TOP_HEIGHT
-                holder.setFixedSize(TOP_WIDTH, TOP_HEIGHT)
-            }
-
-            // Keep outer screen containers fixed (16:9 top, 1240:1080 bottom) so gamepad sidebars never shift,
-            // and pillarbox/letterbox the inner SurfaceViews for exact aspect ratio and pixel-accurate touch.
-            val topContainerW = binding.topScreenContainer.width
-            val topContainerH = binding.topScreenContainer.height
-            binding.topSurfaceView.layoutParams = if (topContainerW > 0 && topContainerH > 0) {
-                val fitW = (topContainerH * BOTTOM_WIDTH / BOTTOM_HEIGHT).coerceAtMost(topContainerW)
-                FrameLayout.LayoutParams(fitW, topContainerH, Gravity.CENTER)
-            } else {
-                FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT, Gravity.CENTER)
-            }
-
-            val bottomContainerW = binding.bottomScreenContainer.width
-            val bottomContainerH = binding.bottomScreenContainer.height
-            binding.bottomSurfaceView.layoutParams = if (bottomContainerW > 0 && bottomContainerH > 0) {
-                val fitH = (bottomContainerW * TOP_HEIGHT / TOP_WIDTH).coerceAtMost(bottomContainerH)
-                FrameLayout.LayoutParams(bottomContainerW, fitH, Gravity.CENTER)
-            } else {
-                FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT, Gravity.CENTER)
-            }
-        } else {
-            binding.topSurfaceView.apply {
-                targetDisplayId = primaryDisplayId
-                virtualWidth = TOP_WIDTH
-                virtualHeight = TOP_HEIGHT
-                holder.setFixedSize(TOP_WIDTH, TOP_HEIGHT)
-                layoutParams = FrameLayout.LayoutParams(
-                    FrameLayout.LayoutParams.MATCH_PARENT,
-                    FrameLayout.LayoutParams.MATCH_PARENT,
-                    Gravity.CENTER
-                )
-            }
-            binding.bottomSurfaceView.apply {
-                targetDisplayId = secondaryDisplayId
-                virtualWidth = BOTTOM_WIDTH
-                virtualHeight = BOTTOM_HEIGHT
-                holder.setFixedSize(BOTTOM_WIDTH, BOTTOM_HEIGHT)
-                layoutParams = FrameLayout.LayoutParams(
-                    FrameLayout.LayoutParams.MATCH_PARENT,
-                    FrameLayout.LayoutParams.MATCH_PARENT,
-                    Gravity.CENTER
-                )
-            }
+        // Each SurfaceView stays permanently bound to its own VirtualDisplay & native resolution:
+        // topSurfaceView -> primaryDisplayId (1920x1080), bottomSurfaceView -> secondaryDisplayId (1240x1080).
+        binding.topSurfaceView.apply {
+            targetDisplayId = primaryDisplayId
+            virtualWidth = TOP_WIDTH
+            virtualHeight = TOP_HEIGHT
         }
+        binding.bottomSurfaceView.apply {
+            targetDisplayId = secondaryDisplayId
+            virtualWidth = BOTTOM_WIDTH
+            virtualHeight = BOTTOM_HEIGHT
+        }
+
+        val topLp = binding.topSurfaceView.layoutParams as ConstraintLayout.LayoutParams
+        val botLp = binding.bottomSurfaceView.layoutParams as ConstraintLayout.LayoutParams
+
+        if (isSwapped) {
+            // topSurfaceView (1920x1080) -> letterboxed 16:9 centered inside bottomScreenContainer
+            topLp.topToTop = R.id.bottomScreenContainer
+            topLp.bottomToBottom = R.id.bottomScreenContainer
+            topLp.startToStart = R.id.bottomScreenContainer
+            topLp.endToEnd = R.id.bottomScreenContainer
+            topLp.dimensionRatio = "H,16:9"
+
+            // bottomSurfaceView (1240x1080) -> pillarboxed 1240:1080 centered inside topScreenContainer
+            botLp.topToTop = R.id.topScreenContainer
+            botLp.bottomToBottom = R.id.topScreenContainer
+            botLp.startToStart = R.id.topScreenContainer
+            botLp.endToEnd = R.id.topScreenContainer
+            botLp.dimensionRatio = "W,1240:1080"
+        } else {
+            // Normal: topSurfaceView -> topScreenContainer (16:9), bottomSurfaceView -> bottomScreenContainer (1240:1080)
+            topLp.topToTop = R.id.topScreenContainer
+            topLp.bottomToBottom = R.id.topScreenContainer
+            topLp.startToStart = R.id.topScreenContainer
+            topLp.endToEnd = R.id.topScreenContainer
+            topLp.dimensionRatio = "16:9"
+
+            botLp.topToTop = R.id.bottomScreenContainer
+            botLp.bottomToBottom = R.id.bottomScreenContainer
+            botLp.startToStart = R.id.bottomScreenContainer
+            botLp.endToEnd = R.id.bottomScreenContainer
+            botLp.dimensionRatio = "1240:1080"
+        }
+
+        binding.topSurfaceView.layoutParams = topLp
+        binding.bottomSurfaceView.layoutParams = botLp
     }
 
     private fun closeBottomApp() {
