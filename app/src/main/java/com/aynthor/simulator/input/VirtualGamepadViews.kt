@@ -136,21 +136,39 @@ class VirtualDpadView @JvmOverloads constructor(
     }
 
     private fun setDirections(u: Boolean, d: Boolean, l: Boolean, r: Boolean) {
-        if (u != upPressed) {
-            upPressed = u
-            onKeyEvent?.invoke(KeyEvent.KEYCODE_DPAD_UP, u)
+        // Always send releases (ACTION_UP) before new presses (ACTION_DOWN)
+        if (!u && upPressed) {
+            upPressed = false
+            onKeyEvent?.invoke(KeyEvent.KEYCODE_DPAD_UP, false)
         }
-        if (d != downPressed) {
-            downPressed = d
-            onKeyEvent?.invoke(KeyEvent.KEYCODE_DPAD_DOWN, d)
+        if (!d && downPressed) {
+            downPressed = false
+            onKeyEvent?.invoke(KeyEvent.KEYCODE_DPAD_DOWN, false)
         }
-        if (l != leftPressed) {
-            leftPressed = l
-            onKeyEvent?.invoke(KeyEvent.KEYCODE_DPAD_LEFT, l)
+        if (!l && leftPressed) {
+            leftPressed = false
+            onKeyEvent?.invoke(KeyEvent.KEYCODE_DPAD_LEFT, false)
         }
-        if (r != rightPressed) {
-            rightPressed = r
-            onKeyEvent?.invoke(KeyEvent.KEYCODE_DPAD_RIGHT, r)
+        if (!r && rightPressed) {
+            rightPressed = false
+            onKeyEvent?.invoke(KeyEvent.KEYCODE_DPAD_RIGHT, false)
+        }
+
+        if (u && !upPressed) {
+            upPressed = true
+            onKeyEvent?.invoke(KeyEvent.KEYCODE_DPAD_UP, true)
+        }
+        if (d && !downPressed) {
+            downPressed = true
+            onKeyEvent?.invoke(KeyEvent.KEYCODE_DPAD_DOWN, true)
+        }
+        if (l && !leftPressed) {
+            leftPressed = true
+            onKeyEvent?.invoke(KeyEvent.KEYCODE_DPAD_LEFT, true)
+        }
+        if (r && !rightPressed) {
+            rightPressed = true
+            onKeyEvent?.invoke(KeyEvent.KEYCODE_DPAD_RIGHT, true)
         }
         invalidate()
     }

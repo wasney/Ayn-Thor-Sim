@@ -102,7 +102,7 @@ class MainActivity : AppCompatActivity() {
             .daemon(false)
             .processNameSuffix("virtual_display_service")
             .debuggable(false)
-            .version(11)
+            .version(12)
     }
 
     private val serviceConnection = object : ServiceConnection {
@@ -531,6 +531,13 @@ class MainActivity : AppCompatActivity() {
             InputDevice.SOURCE_GAMEPAD
         }
 
+        if (keyCode in KeyEvent.KEYCODE_DPAD_UP..KeyEvent.KEYCODE_DPAD_RIGHT ||
+            keyCode == KeyEvent.KEYCODE_BUTTON_L2 ||
+            keyCode == KeyEvent.KEYCODE_BUTTON_R2
+        ) {
+            sendVirtualJoystick()
+        }
+
         inputExecutor.execute {
             if (lastBottomTouchTime > 0L) {
                 lastBottomTouchTime = 0L
@@ -546,16 +553,7 @@ class MainActivity : AppCompatActivity() {
                 0,
                 source
             )
-            if (keyCode in KeyEvent.KEYCODE_DPAD_UP..KeyEvent.KEYCODE_DPAD_RIGHT ||
-                keyCode == KeyEvent.KEYCODE_BUTTON_L2 ||
-                keyCode == KeyEvent.KEYCODE_BUTTON_R2
-            ) {
-                userService?.injectJoystickEvent(
-                    targetId, now, now,
-                    leftStickX, leftStickY, rightStickX, rightStickY,
-                    lTrigger, rTrigger, hatX, hatY
-                )
-            }
+
         }
     }
 
@@ -853,6 +851,7 @@ class MainActivity : AppCompatActivity() {
             }
         } else if (hideLauncherAfter) {
             addLocalLog("Launched ${app.packageName} on display $displayId")
+            binding.root.postDelayed({ ioExecutor.execute { userService?.focusDisplay(displayId) } }, 450L)
             binding.launcherOverlay.visibility = View.GONE
         }
     }
