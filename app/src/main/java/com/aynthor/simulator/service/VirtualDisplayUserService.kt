@@ -311,7 +311,7 @@ class VirtualDisplayUserService(private val baseContext: Context) : IVirtualDisp
             val tasks = getTasksOnDisplay(displayId)
             val topTask = tasks.firstOrNull()
             val topTaskId = topTask?.let { extractTaskId(it) } ?: -1
-            if (topTaskId > 0) {
+            if (topTask != null && topTaskId > 0) {
                 if (cachedFocusDisplayId != displayId || cachedFocusTaskId != topTaskId) {
                     val pkg = extractPackageName(topTask)
                     log("focusDisplay($displayId) -> task=$topTaskId ($pkg)")
