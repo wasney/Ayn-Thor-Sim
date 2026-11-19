@@ -140,7 +140,7 @@ class MainActivity : AppCompatActivity() {
             .daemon(false)
             .processNameSuffix("virtual_display_service")
             .debuggable(false)
-            .version(30)
+            .version(31)
     }
 
     private val serviceConnection = object : ServiceConnection {
@@ -1225,6 +1225,13 @@ class MainActivity : AppCompatActivity() {
                 "BAT: --%"
             }
 
+            val am = getSystemService(Context.ACTIVITY_SERVICE) as android.app.ActivityManager
+            val mi = android.app.ActivityManager.MemoryInfo()
+            am.getMemoryInfo(mi)
+            val totalGb = mi.totalMem / (1024.0 * 1024.0 * 1024.0)
+            val usedGb = (mi.totalMem - mi.availMem) / (1024.0 * 1024.0 * 1024.0)
+            binding.tvPerfFps.text = String.format(Locale.US, "RAM: %.1f / %.0f GB", usedGb, totalGb)
+
             val svc = userService
             val topDisp = primaryDisplayId
             if (svc != null) {
@@ -1236,11 +1243,10 @@ class MainActivity : AppCompatActivity() {
                     }
                     if (!raw.isNullOrBlank()) {
                         val parts = raw.split("|")
-                        if (parts.size >= 5) {
+                        if (parts.size >= 4) {
                             runOnUiThread {
                                 binding.tvPerfCpu.text = "CPU: ${parts[0]} (${parts[1]})"
                                 binding.tvPerfGpu.text = "GPU: ${parts[2]} (${parts[3]})"
-                                binding.tvPerfFps.text = "FPS: ${parts[4]}"
                             }
                         }
                     }

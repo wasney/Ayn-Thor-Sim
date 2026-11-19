@@ -181,13 +181,6 @@ class VirtualDpadView @JvmOverloads constructor(
         invalidate()
     }
 
-    override fun onWindowFocusChanged(hasWindowFocus: Boolean) {
-        super.onWindowFocusChanged(hasWindowFocus)
-        if (!hasWindowFocus && activePointerId != MotionEvent.INVALID_POINTER_ID) {
-            activePointerId = MotionEvent.INVALID_POINTER_ID
-            setDirections(false, false, false, false)
-        }
-    }
 
     override fun onDetachedFromWindow() {
         super.onDetachedFromWindow()
@@ -337,18 +330,6 @@ class VirtualThumbstickView @JvmOverloads constructor(
         invalidate()
     }
 
-    override fun onWindowFocusChanged(hasWindowFocus: Boolean) {
-        super.onWindowFocusChanged(hasWindowFocus)
-        if (!hasWindowFocus && activePointerId != MotionEvent.INVALID_POINTER_ID) {
-            activePointerId = MotionEvent.INVALID_POINTER_ID
-            anchorX = width / 2f
-            anchorY = height / 2f
-            knobX = anchorX
-            knobY = anchorY
-            emitIfChanged(0f, 0f)
-            invalidate()
-        }
-    }
 }
 
 class VirtualFaceButtonsView @JvmOverloads constructor(
@@ -521,13 +502,6 @@ class VirtualFaceButtonsView @JvmOverloads constructor(
         invalidate()
     }
 
-    override fun onWindowFocusChanged(hasWindowFocus: Boolean) {
-        super.onWindowFocusChanged(hasWindowFocus)
-        if (!hasWindowFocus && (pointerToKey.isNotEmpty() || activeKeys.isNotEmpty())) {
-            pointerToKey.clear()
-            recomputeActiveKeys()
-        }
-    }
 
     override fun onDetachedFromWindow() {
         super.onDetachedFromWindow()
@@ -618,13 +592,6 @@ class VirtualButtonView @JvmOverloads constructor(
         invalidate()
     }
 
-    override fun onWindowFocusChanged(hasWindowFocus: Boolean) {
-        super.onWindowFocusChanged(hasWindowFocus)
-        if (!hasWindowFocus && isPressedState) {
-            activePointerId = MotionEvent.INVALID_POINTER_ID
-            setPressedState(false)
-        }
-    }
 
     override fun onDetachedFromWindow() {
         super.onDetachedFromWindow()
