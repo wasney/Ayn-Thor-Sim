@@ -31,53 +31,101 @@
             android:layout_width="match_parent"
             android:layout_height="match_parent" />
 
-        <!-- Built-in Filterable App Launcher Overlay -->
+        <!-- Built-in Searchable, Folder-Enabled Top App Launcher Overlay -->
         <LinearLayout
             android:id="@+id/launcherOverlay"
             android:layout_width="match_parent"
             android:layout_height="match_parent"
             android:background="#EE0B0B0F"
             android:orientation="vertical"
-            android:padding="12dp">
+            android:padding="10dp">
 
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:gravity="center_vertical"
                 android:orientation="horizontal"
-                android:paddingBottom="8dp">
+                android:paddingBottom="6dp">
 
                 <TextView
                     android:id="@+id/launcherTitle"
-                    android:layout_width="0dp"
+                    android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:layout_weight="1"
+                    android:layout_marginEnd="8dp"
                     android:text="@string/launcher_title"
                     android:textColor="#FFFFFF"
-                    android:textSize="16sp"
+                    android:textSize="15sp"
                     android:textStyle="bold" />
+
+                <EditText
+                    android:id="@+id/etTopSearch"
+                    android:layout_width="0dp"
+                    android:layout_height="34dp"
+                    android:layout_marginEnd="6dp"
+                    android:layout_weight="1"
+                    android:background="#1E1E28"
+                    android:hint="Search apps…"
+                    android:imeOptions="actionSearch"
+                    android:inputType="text"
+                    android:maxLines="1"
+                    android:paddingHorizontal="10dp"
+                    android:textColor="#FFFFFF"
+                    android:textColorHint="#8E8E9A"
+                    android:textSize="12sp" />
+
+                <Button
+                    android:id="@+id/btnTopFolder"
+                    style="@style/Widget.Material3.Button.OutlinedButton"
+                    android:layout_width="wrap_content"
+                    android:layout_height="34dp"
+                    android:layout_marginEnd="4dp"
+                    android:insetTop="0dp"
+                    android:insetBottom="0dp"
+                    android:minWidth="0dp"
+                    android:paddingHorizontal="10dp"
+                    android:text="All"
+                    android:textColor="#D0D0D8"
+                    android:textSize="11sp" />
+
+                <Button
+                    android:id="@+id/btnTopSort"
+                    style="@style/Widget.Material3.Button.OutlinedButton"
+                    android:layout_width="wrap_content"
+                    android:layout_height="34dp"
+                    android:layout_marginEnd="4dp"
+                    android:insetTop="0dp"
+                    android:insetBottom="0dp"
+                    android:minWidth="0dp"
+                    android:paddingHorizontal="10dp"
+                    android:text="A-Z"
+                    android:textColor="#D0D0D8"
+                    android:textSize="11sp" />
 
                 <Button
                     android:id="@+id/btnToggleShowAll"
                     style="@style/Widget.Material3.Button.OutlinedButton"
                     android:layout_width="wrap_content"
-                    android:layout_height="36dp"
-                    android:layout_marginEnd="8dp"
+                    android:layout_height="34dp"
+                    android:layout_marginEnd="4dp"
                     android:insetTop="0dp"
                     android:insetBottom="0dp"
+                    android:minWidth="0dp"
+                    android:paddingHorizontal="10dp"
                     android:text="@string/show_filtered_apps"
                     android:textColor="#D0D0D8"
-                    android:textSize="12sp" />
+                    android:textSize="11sp" />
 
                 <Button
                     android:id="@+id/btnFilterApps"
                     style="@style/Widget.Material3.Button.TonalButton"
                     android:layout_width="wrap_content"
-                    android:layout_height="36dp"
+                    android:layout_height="34dp"
                     android:insetTop="0dp"
                     android:insetBottom="0dp"
+                    android:minWidth="0dp"
+                    android:paddingHorizontal="10dp"
                     android:text="@string/filter_apps"
-                    android:textSize="12sp" />
+                    android:textSize="11sp" />
             </LinearLayout>
 
             <androidx.recyclerview.widget.RecyclerView
@@ -119,7 +167,7 @@
         </LinearLayout>
     </FrameLayout>
 
-    <!-- Bottom-Center: AYN Thor Secondary 1240x1080 Screen -->
+    <!-- Bottom-Center: Secondary 1240x1080 Screen -->
     <FrameLayout
         android:id="@+id/bottomScreenContainer"
         android:layout_width="0dp"
@@ -138,15 +186,279 @@
             android:layout_width="match_parent"
             android:layout_height="match_parent" />
 
-        <!-- Bottom Screen Icon App Launcher Overlay -->
+        <!-- Configurable Bottom Home Screen Dashboard -->
+        <ScrollView
+            android:id="@+id/bottomHomeOverlay"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:background="#F00B0B10"
+            android:fillViewport="true">
+
+            <LinearLayout
+                android:id="@+id/bottomHomeContent"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:gravity="center_horizontal"
+                android:orientation="vertical"
+                android:padding="12dp">
+
+                <!-- Clock Widget -->
+                <LinearLayout
+                    android:id="@+id/homeClockCard"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginBottom="8dp"
+                    android:background="#181820"
+                    android:gravity="center"
+                    android:orientation="vertical"
+                    android:padding="10dp">
+
+                    <TextView
+                        android:id="@+id/tvHomeClock"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="12:00"
+                        android:textColor="#FFFFFF"
+                        android:textSize="28sp"
+                        android:textStyle="bold" />
+
+                    <TextView
+                        android:id="@+id/tvHomeDate"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="DroiDS Ready"
+                        android:textColor="#9CA3AF"
+                        android:textSize="11sp" />
+                </LinearLayout>
+
+                <!-- Performance Monitor Widget -->
+                <LinearLayout
+                    android:id="@+id/homePerfCard"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginBottom="8dp"
+                    android:background="#181820"
+                    android:orientation="vertical"
+                    android:padding="10dp">
+
+                    <TextView
+                        android:id="@+id/tvPerfHeader"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginBottom="6dp"
+                        android:text="PERFORMANCE"
+                        android:textColor="#4C9AFF"
+                        android:textSize="10sp"
+                        android:textStyle="bold" />
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal">
+
+                        <LinearLayout
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:orientation="vertical">
+
+                            <TextView
+                                android:id="@+id/tvPerfFps"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="FPS: --"
+                                android:textColor="#F0F0F5"
+                                android:textSize="12sp"
+                                android:textStyle="bold" />
+
+                            <TextView
+                                android:id="@+id/tvPerfCpu"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="2dp"
+                                android:text="CPU: -- (--)"
+                                android:textColor="#C8C8D4"
+                                android:textSize="11sp" />
+                        </LinearLayout>
+
+                        <LinearLayout
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:orientation="vertical">
+
+                            <TextView
+                                android:id="@+id/tvPerfBattery"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="BAT: --%"
+                                android:textColor="#22C55E"
+                                android:textSize="12sp"
+                                android:textStyle="bold" />
+
+                            <TextView
+                                android:id="@+id/tvPerfGpu"
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="2dp"
+                                android:text="GPU: -- (--)"
+                                android:textColor="#C8C8D4"
+                                android:textSize="11sp" />
+                        </LinearLayout>
+                    </LinearLayout>
+                </LinearLayout>
+
+                <!-- Quick Shortcuts Widget -->
+                <LinearLayout
+                    android:id="@+id/homeShortcutsCard"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:background="#181820"
+                    android:orientation="vertical"
+                    android:padding="10dp">
+
+                    <TextView
+                        android:id="@+id/tvShortcutsHeader"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginBottom="6dp"
+                        android:text="QUICK SHORTCUTS"
+                        android:textColor="#9CA3AF"
+                        android:textSize="10sp"
+                        android:textStyle="bold" />
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal">
+
+                        <Button
+                            android:id="@+id/btnHomeTopApps"
+                            style="@style/Widget.Material3.Button.TonalButton"
+                            android:layout_width="0dp"
+                            android:layout_height="36dp"
+                            android:layout_marginEnd="4dp"
+                            android:layout_weight="1"
+                            android:insetTop="0dp"
+                            android:insetBottom="0dp"
+                            android:paddingHorizontal="6dp"
+                            android:text="Top Apps"
+                            android:textSize="11sp" />
+
+                        <Button
+                            android:id="@+id/btnHomeBottomApps"
+                            style="@style/Widget.Material3.Button.TonalButton"
+                            android:layout_width="0dp"
+                            android:layout_height="36dp"
+                            android:layout_marginStart="4dp"
+                            android:layout_weight="1"
+                            android:insetTop="0dp"
+                            android:insetBottom="0dp"
+                            android:paddingHorizontal="6dp"
+                            android:text="Bottom Apps"
+                            android:textSize="11sp" />
+                    </LinearLayout>
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="6dp"
+                        android:orientation="horizontal">
+
+                        <Button
+                            android:id="@+id/btnHomeSettings"
+                            style="@style/Widget.Material3.Button.OutlinedButton"
+                            android:layout_width="0dp"
+                            android:layout_height="36dp"
+                            android:layout_marginEnd="4dp"
+                            android:layout_weight="1"
+                            android:insetTop="0dp"
+                            android:insetBottom="0dp"
+                            android:paddingHorizontal="6dp"
+                            android:text="Settings"
+                            android:textSize="11sp" />
+
+                        <Button
+                            android:id="@+id/btnHomeSwap"
+                            style="@style/Widget.Material3.Button.OutlinedButton"
+                            android:layout_width="0dp"
+                            android:layout_height="36dp"
+                            android:layout_marginStart="4dp"
+                            android:layout_weight="1"
+                            android:insetTop="0dp"
+                            android:insetBottom="0dp"
+                            android:paddingHorizontal="6dp"
+                            android:text="Swap"
+                            android:textSize="11sp" />
+                    </LinearLayout>
+
+                    <Button
+                        android:id="@+id/btnHomeHideDashboard"
+                        style="@style/Widget.Material3.Button.TextButton"
+                        android:layout_width="match_parent"
+                        android:layout_height="32dp"
+                        android:layout_marginTop="4dp"
+                        android:insetTop="0dp"
+                        android:insetBottom="0dp"
+                        android:text="Show Bottom Display Surface"
+                        android:textSize="11sp" />
+                </LinearLayout>
+            </LinearLayout>
+        </ScrollView>
+
+        <!-- Bottom Screen Searchable, Folder-Enabled Icon App Launcher Overlay -->
         <LinearLayout
             android:id="@+id/bottomLauncherOverlay"
             android:layout_width="match_parent"
             android:layout_height="match_parent"
             android:background="#EE0B0B0F"
             android:orientation="vertical"
-            android:padding="10dp"
+            android:padding="8dp"
             android:visibility="gone">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:gravity="center_vertical"
+                android:orientation="horizontal"
+                android:paddingBottom="4dp">
+
+                <TextView
+                    android:id="@+id/tvBottomLauncherTitle"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="Bottom Apps"
+                    android:textColor="#FFFFFF"
+                    android:textSize="13sp"
+                    android:textStyle="bold" />
+
+                <Button
+                    android:id="@+id/btnCloseBottomApp"
+                    style="@style/Widget.Material3.Button.OutlinedButton"
+                    android:layout_width="wrap_content"
+                    android:layout_height="30dp"
+                    android:layout_marginEnd="4dp"
+                    android:insetTop="0dp"
+                    android:insetBottom="0dp"
+                    android:minWidth="0dp"
+                    android:paddingHorizontal="8dp"
+                    android:text="Close App"
+                    android:textColor="#EF4444"
+                    android:textSize="10sp" />
+
+                <Button
+                    android:id="@+id/btnCancelBottomLauncher"
+                    style="@style/Widget.Material3.Button.TonalButton"
+                    android:layout_width="wrap_content"
+                    android:layout_height="30dp"
+                    android:insetTop="0dp"
+                    android:insetBottom="0dp"
+                    android:minWidth="0dp"
+                    android:paddingHorizontal="8dp"
+                    android:text="Done"
+                    android:textSize="10sp" />
+            </LinearLayout>
 
             <LinearLayout
                 android:layout_width="match_parent"
@@ -155,36 +467,48 @@
                 android:orientation="horizontal"
                 android:paddingBottom="6dp">
 
-                <TextView
+                <EditText
+                    android:id="@+id/etBottomSearch"
                     android:layout_width="0dp"
-                    android:layout_height="wrap_content"
+                    android:layout_height="30dp"
+                    android:layout_marginEnd="4dp"
                     android:layout_weight="1"
-                    android:text="Bottom Screen Apps"
+                    android:background="#1E1E28"
+                    android:hint="Search…"
+                    android:imeOptions="actionSearch"
+                    android:inputType="text"
+                    android:maxLines="1"
+                    android:paddingHorizontal="8dp"
                     android:textColor="#FFFFFF"
-                    android:textSize="14sp"
-                    android:textStyle="bold" />
+                    android:textColorHint="#8E8E9A"
+                    android:textSize="11sp" />
 
                 <Button
-                    android:id="@+id/btnCloseBottomApp"
+                    android:id="@+id/btnBottomFolder"
                     style="@style/Widget.Material3.Button.OutlinedButton"
                     android:layout_width="wrap_content"
-                    android:layout_height="32dp"
-                    android:layout_marginEnd="6dp"
+                    android:layout_height="30dp"
+                    android:layout_marginEnd="4dp"
                     android:insetTop="0dp"
                     android:insetBottom="0dp"
-                    android:text="Close App"
-                    android:textColor="#EF4444"
-                    android:textSize="11sp" />
+                    android:minWidth="0dp"
+                    android:paddingHorizontal="8dp"
+                    android:text="All"
+                    android:textColor="#D0D0D8"
+                    android:textSize="10sp" />
 
                 <Button
-                    android:id="@+id/btnCancelBottomLauncher"
-                    style="@style/Widget.Material3.Button.TonalButton"
+                    android:id="@+id/btnBottomSort"
+                    style="@style/Widget.Material3.Button.OutlinedButton"
                     android:layout_width="wrap_content"
-                    android:layout_height="32dp"
+                    android:layout_height="30dp"
                     android:insetTop="0dp"
                     android:insetBottom="0dp"
-                    android:text="Done"
-                    android:textSize="11sp" />
+                    android:minWidth="0dp"
+                    android:paddingHorizontal="8dp"
+                    android:text="A-Z"
+                    android:textColor="#D0D0D8"
+                    android:textSize="10sp" />
             </LinearLayout>
 
             <androidx.recyclerview.widget.RecyclerView
@@ -217,8 +541,8 @@
 
             <ImageButton
                 android:id="@+id/btnHome"
-                android:layout_width="34dp"
-                android:layout_height="34dp"
+                android:layout_width="32dp"
+                android:layout_height="32dp"
                 android:background="?attr/selectableItemBackgroundBorderless"
                 android:contentDescription="Launcher / Home"
                 android:src="@android:drawable/ic_menu_myplaces"
@@ -226,9 +550,9 @@
 
             <ImageButton
                 android:id="@+id/btnSwap"
-                android:layout_width="34dp"
-                android:layout_height="34dp"
-                android:layout_marginStart="4dp"
+                android:layout_width="32dp"
+                android:layout_height="32dp"
+                android:layout_marginStart="2dp"
                 android:background="?attr/selectableItemBackgroundBorderless"
                 android:contentDescription="Swap Screens"
                 android:src="@android:drawable/ic_menu_sort_by_size"
@@ -236,9 +560,9 @@
 
             <ImageButton
                 android:id="@+id/btnLaunchBottom"
-                android:layout_width="34dp"
-                android:layout_height="34dp"
-                android:layout_marginStart="4dp"
+                android:layout_width="32dp"
+                android:layout_height="32dp"
+                android:layout_marginStart="2dp"
                 android:background="?attr/selectableItemBackgroundBorderless"
                 android:contentDescription="Launch on Bottom"
                 android:src="@android:drawable/ic_menu_add"
@@ -246,11 +570,11 @@
 
             <ImageButton
                 android:id="@+id/btnCloseBottom"
-                android:layout_width="34dp"
-                android:layout_height="34dp"
+                android:layout_width="32dp"
+                android:layout_height="32dp"
                 android:layout_marginStart="2dp"
                 android:background="?attr/selectableItemBackgroundBorderless"
-                android:contentDescription="Close Bottom App"
+                android:contentDescription="Bottom Home / Close Bottom App"
                 android:src="@android:drawable/ic_delete"
                 android:tint="#9CA3AF" />
 
@@ -258,11 +582,11 @@
                 android:id="@+id/btnToggleLeftStick"
                 android:layout_width="wrap_content"
                 android:layout_height="26dp"
-                android:layout_marginStart="6dp"
+                android:layout_marginStart="4dp"
                 android:background="#1A1A20"
                 android:gravity="center"
-                android:paddingHorizontal="8dp"
-                android:text="D/LS"
+                android:paddingHorizontal="7dp"
+                android:text="D-PAD"
                 android:textColor="#9CA3AF"
                 android:textSize="11sp"
                 android:textStyle="bold" />
@@ -349,20 +673,30 @@
                 android:id="@+id/btnToggleRightStick"
                 android:layout_width="wrap_content"
                 android:layout_height="26dp"
-                android:layout_marginEnd="6dp"
+                android:layout_marginEnd="4dp"
                 android:background="#1A1A20"
                 android:gravity="center"
-                android:paddingHorizontal="8dp"
-                android:text="ABXY/RS"
+                android:paddingHorizontal="7dp"
+                android:text="ABXY"
                 android:textColor="#9CA3AF"
                 android:textSize="11sp"
                 android:textStyle="bold" />
 
             <ImageButton
+                android:id="@+id/btnSettings"
+                android:layout_width="32dp"
+                android:layout_height="32dp"
+                android:layout_marginEnd="2dp"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:contentDescription="Settings"
+                android:src="@android:drawable/ic_menu_preferences"
+                android:tint="#9CA3AF" />
+
+            <ImageButton
                 android:id="@+id/btnDebugLog"
-                android:layout_width="34dp"
-                android:layout_height="34dp"
-                android:layout_marginEnd="4dp"
+                android:layout_width="32dp"
+                android:layout_height="32dp"
+                android:layout_marginEnd="2dp"
                 android:background="?attr/selectableItemBackgroundBorderless"
                 android:contentDescription="Debug Log"
                 android:src="@android:drawable/ic_menu_info_details"
@@ -370,8 +704,8 @@
 
             <ImageButton
                 android:id="@+id/btnToggleTouch"
-                android:layout_width="34dp"
-                android:layout_height="34dp"
+                android:layout_width="32dp"
+                android:layout_height="32dp"
                 android:background="?attr/selectableItemBackgroundBorderless"
                 android:contentDescription="Toggle Touch Controls"
                 android:src="@android:drawable/ic_menu_view"
@@ -379,9 +713,9 @@
 
             <ImageButton
                 android:id="@+id/btnExit"
-                android:layout_width="34dp"
-                android:layout_height="34dp"
-                android:layout_marginStart="4dp"
+                android:layout_width="32dp"
+                android:layout_height="32dp"
+                android:layout_marginStart="2dp"
                 android:background="?attr/selectableItemBackgroundBorderless"
                 android:contentDescription="Stop / Exit"
                 android:src="@android:drawable/ic_menu_close_clear_cancel"

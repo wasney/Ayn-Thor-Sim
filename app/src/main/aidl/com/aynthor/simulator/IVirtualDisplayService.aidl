@@ -71,4 +71,6 @@ interface IVirtualDisplayService {
     oneway void focusDisplay(int displayId) = 12;
 
     void registerClientDeathToken(IBinder token) = 13;
+
+    String getPerformanceStats(int displayId) = 14;
 }

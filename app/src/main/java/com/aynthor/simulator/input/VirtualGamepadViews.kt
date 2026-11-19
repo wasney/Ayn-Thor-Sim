@@ -173,6 +173,27 @@ class VirtualDpadView @JvmOverloads constructor(
         }
         invalidate()
     }
+
+    fun applyTheme(isLight: Boolean) {
+        bgPaint.color = Color.parseColor(if (isLight) "#E4E4E7" else "#242429")
+        borderPaint.color = Color.parseColor(if (isLight) "#A1A1AA" else "#484852")
+        labelPaint.color = Color.parseColor(if (isLight) "#27272A" else "#D0D0D8")
+        invalidate()
+    }
+
+    override fun onWindowFocusChanged(hasWindowFocus: Boolean) {
+        super.onWindowFocusChanged(hasWindowFocus)
+        if (!hasWindowFocus && activePointerId != MotionEvent.INVALID_POINTER_ID) {
+            activePointerId = MotionEvent.INVALID_POINTER_ID
+            setDirections(false, false, false, false)
+        }
+    }
+
+    override fun onDetachedFromWindow() {
+        super.onDetachedFromWindow()
+        activePointerId = MotionEvent.INVALID_POINTER_ID
+        upPressed = false; downPressed = false; leftPressed = false; rightPressed = false
+    }
 }
 
 class VirtualThumbstickView @JvmOverloads constructor(
@@ -308,6 +329,26 @@ class VirtualThumbstickView @JvmOverloads constructor(
             onStickMove?.invoke(nx, ny)
         }
     }
+
+    fun applyTheme(isLight: Boolean) {
+        basePaint.color = Color.parseColor(if (isLight) "#E4E4E7" else "#1D1D22")
+        ringPaint.color = Color.parseColor(if (isLight) "#A1A1AA" else "#484852")
+        knobPaint.color = Color.parseColor(if (isLight) "#71717A" else "#52525E")
+        invalidate()
+    }
+
+    override fun onWindowFocusChanged(hasWindowFocus: Boolean) {
+        super.onWindowFocusChanged(hasWindowFocus)
+        if (!hasWindowFocus && activePointerId != MotionEvent.INVALID_POINTER_ID) {
+            activePointerId = MotionEvent.INVALID_POINTER_ID
+            anchorX = width / 2f
+            anchorY = height / 2f
+            knobX = anchorX
+            knobY = anchorY
+            emitIfChanged(0f, 0f)
+            invalidate()
+        }
+    }
 }
 
 class VirtualFaceButtonsView @JvmOverloads constructor(
@@ -319,21 +360,41 @@ class VirtualFaceButtonsView @JvmOverloads constructor(
     var onKeyEvent: ((keyCode: Int, isDown: Boolean) -> Unit)? = null
 
     private data class FaceBtn(
-        val label: String,
-        val keyCode: Int,
-        val color: Int,
+        var label: String,
+        var keyCode: Int,
+        var color: Int,
         var cx: Float = 0f,
         var cy: Float = 0f,
         var radius: Float = 0f
     )
 
-    // Nintendo/AYN Thor style diamond: Top=X, Right=A, Bottom=B, Left=Y
+    // Order: [0]=Top, [1]=Right, [2]=Bottom, [3]=Left
     private val buttons = listOf(
-        FaceBtn("X", KeyEvent.KEYCODE_BUTTON_X, Color.parseColor("#3B82F6")),
-        FaceBtn("A", KeyEvent.KEYCODE_BUTTON_A, Color.parseColor("#EF4444")),
-        FaceBtn("B", KeyEvent.KEYCODE_BUTTON_B, Color.parseColor("#EAB308")),
-        FaceBtn("Y", KeyEvent.KEYCODE_BUTTON_Y, Color.parseColor("#22C55E"))
+        FaceBtn("Y", KeyEvent.KEYCODE_BUTTON_Y, Color.parseColor("#EAB308")),
+        FaceBtn("B", KeyEvent.KEYCODE_BUTTON_B, Color.parseColor("#EF4444")),
+        FaceBtn("A", KeyEvent.KEYCODE_BUTTON_A, Color.parseColor("#22C55E")),
+        FaceBtn("X", KeyEvent.KEYCODE_BUTTON_X, Color.parseColor("#3B82F6"))
     )
+
+    var isXboxLayout: Boolean = true
+        set(value) {
+            field = value
+            if (value) {
+                // Xbox / GameSir: Top=Y, Right=B, Bottom=A, Left=X
+                buttons[0].apply { label = "Y"; keyCode = KeyEvent.KEYCODE_BUTTON_Y; color = Color.parseColor("#EAB308") }
+                buttons[1].apply { label = "B"; keyCode = KeyEvent.KEYCODE_BUTTON_B; color = Color.parseColor("#EF4444") }
+                buttons[2].apply { label = "A"; keyCode = KeyEvent.KEYCODE_BUTTON_A; color = Color.parseColor("#22C55E") }
+                buttons[3].apply { label = "X"; keyCode = KeyEvent.KEYCODE_BUTTON_X; color = Color.parseColor("#3B82F6") }
+            } else {
+                // Nintendo: Top=X, Right=A, Bottom=B, Left=Y
+                buttons[0].apply { label = "X"; keyCode = KeyEvent.KEYCODE_BUTTON_X; color = Color.parseColor("#3B82F6") }
+                buttons[1].apply { label = "A"; keyCode = KeyEvent.KEYCODE_BUTTON_A; color = Color.parseColor("#EF4444") }
+                buttons[2].apply { label = "B"; keyCode = KeyEvent.KEYCODE_BUTTON_B; color = Color.parseColor("#EAB308") }
+                buttons[3].apply { label = "Y"; keyCode = KeyEvent.KEYCODE_BUTTON_Y; color = Color.parseColor("#22C55E") }
+            }
+            pointerToKey.clear()
+            recomputeActiveKeys()
+        }
 
     private val pointerToKey = mutableMapOf<Int, Int>()
     private val activeKeys = mutableSetOf<Int>()
@@ -452,6 +513,27 @@ class VirtualFaceButtonsView @JvmOverloads constructor(
         activeKeys.addAll(newKeys)
         invalidate()
     }
+
+    fun applyTheme(isLight: Boolean) {
+        bgPaint.color = Color.parseColor(if (isLight) "#E4E4E7" else "#242429")
+        borderPaint.color = Color.parseColor(if (isLight) "#A1A1AA" else "#484852")
+        textPaint.color = Color.parseColor(if (isLight) "#18181B" else "#FFFFFF")
+        invalidate()
+    }
+
+    override fun onWindowFocusChanged(hasWindowFocus: Boolean) {
+        super.onWindowFocusChanged(hasWindowFocus)
+        if (!hasWindowFocus && (pointerToKey.isNotEmpty() || activeKeys.isNotEmpty())) {
+            pointerToKey.clear()
+            recomputeActiveKeys()
+        }
+    }
+
+    override fun onDetachedFromWindow() {
+        super.onDetachedFromWindow()
+        pointerToKey.clear()
+        activeKeys.clear()
+    }
 }
 
 class VirtualButtonView @JvmOverloads constructor(
@@ -527,5 +609,26 @@ class VirtualButtonView @JvmOverloads constructor(
             onKeyEvent?.invoke(keyCode, down)
             invalidate()
         }
+    }
+
+    fun applyTheme(isLight: Boolean) {
+        bgPaint.color = Color.parseColor(if (isLight) "#E4E4E7" else "#242429")
+        borderPaint.color = Color.parseColor(if (isLight) "#A1A1AA" else "#484852")
+        textPaint.color = Color.parseColor(if (isLight) "#18181B" else "#E8E8F0")
+        invalidate()
+    }
+
+    override fun onWindowFocusChanged(hasWindowFocus: Boolean) {
+        super.onWindowFocusChanged(hasWindowFocus)
+        if (!hasWindowFocus && isPressedState) {
+            activePointerId = MotionEvent.INVALID_POINTER_ID
+            setPressedState(false)
+        }
+    }
+
+    override fun onDetachedFromWindow() {
+        super.onDetachedFromWindow()
+        activePointerId = MotionEvent.INVALID_POINTER_ID
+        isPressedState = false
     }
 }

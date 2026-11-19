@@ -212,6 +212,10 @@ class VirtualDisplayUserService(private val baseContext: Context) : IVirtualDisp
         )
 
         uinputGamepad.start()
+        // Eagerly initialize InputManager & ShellIdentityContext to avoid first-key-press hitch
+        try {
+            inputManager.hashCode()
+        } catch (_: Throwable) {}
         val topId = topDisplay?.display?.displayId ?: -1
         val bottomId = bottomDisplay?.display?.displayId ?: -1
         log("createDisplays result: topId=$topId, bottomId=$bottomId")
@@ -719,6 +723,107 @@ class VirtualDisplayUserService(private val baseContext: Context) : IVirtualDisp
 
     override fun getDebugLog(): String {
         return uinputGamepad.statusSummary + "\n" + logLines.joinToString("\n")
+    }
+
+    override fun getPerformanceStats(displayId: Int): String {
+        // Format: cpuMhz|cpuTempC|gpuMhz|gpuLoadPct|fps
+        var maxCpuKhz = 0L
+        try {
+            for (core in 0..11) {
+                val f = java.io.File("/sys/devices/system/cpu/cpu$core/cpufreq/scaling_cur_freq")
+                if (!f.exists()) continue
+                val khz = f.readText().trim().toLongOrNull() ?: 0L
+                if (khz > maxCpuKhz) maxCpuKhz = khz
+            }
+        } catch (_: Throwable) {}
+        val cpuStr = if (maxCpuKhz > 0) String.format(Locale.US, "%.2f GHz", maxCpuKhz / 1_000_000.0) else "--"
+
+        var cpuTempC = -1.0
+        try {
+            val thermalDir = java.io.File("/sys/class/thermal")
+            val zones = thermalDir.listFiles { file -> file.name.startsWith("thermal_zone") } ?: emptyArray()
+            for (zone in zones) {
+                val typeFile = java.io.File(zone, "type")
+                val tempFile = java.io.File(zone, "temp")
+                if (!typeFile.exists() || !tempFile.exists()) continue
+                val type = typeFile.readText().trim().lowercase(Locale.US)
+                if (type.contains("cpu") || type.contains("soc") || type.contains("tsens") || type.contains("ap")) {
+                    val raw = tempFile.readText().trim().toDoubleOrNull() ?: continue
+                    val degC = if (raw > 1000.0) raw / 1000.0 else raw
+                    if (degC in 15.0..110.0) {
+                        cpuTempC = degC
+                        break
+                    }
+                }
+            }
+        } catch (_: Throwable) {}
+        val tempStr = if (cpuTempC > 0) String.format(Locale.US, "%.0f°C", cpuTempC) else "--"
+
+        var gpuFreqStr = "--"
+        var gpuLoadStr = "--"
+        try {
+            val gpuFreqFile = java.io.File("/sys/class/kgsl/kgsl-3d0/devfreq/cur_freq")
+            if (gpuFreqFile.exists()) {
+                val hz = gpuFreqFile.readText().trim().toLongOrNull() ?: 0L
+                if (hz > 0) gpuFreqStr = "${hz / 1_000_000L} MHz"
+            }
+            val gpuBusyFile = java.io.File("/sys/class/kgsl/kgsl-3d0/gpubusy")
+            if (gpuBusyFile.exists()) {
+                val parts = gpuBusyFile.readText().trim().split(Regex("\\s+"))
+                if (parts.size >= 2) {
+                    val busy = parts[0].toDoubleOrNull() ?: 0.0
+                    val total = parts[1].toDoubleOrNull() ?: 0.0
+                    if (total > 0) {
+                        val pct = ((busy / total) * 100.0).coerceIn(0.0, 100.0)
+                        gpuLoadStr = String.format(Locale.US, "%.0f%%", pct)
+                    }
+                }
+            }
+        } catch (_: Throwable) {}
+
+        var fpsStr = "--"
+        try {
+            val targetTask = if (displayId > 0) getTasksOnDisplay(displayId).firstOrNull() else null
+            val topActivity = targetTask?.let {
+                try {
+                    val f = it.javaClass.getField("topActivity").get(it)
+                    f?.toString()
+                } catch (_: Throwable) { null }
+            }
+            val pkg = topActivity?.substringAfter("{")?.substringBefore("/")
+            if (!pkg.isNullOrBlank()) {
+                val proc = ProcessBuilder("dumpsys", "gfxinfo", pkg, "framestats")
+                    .redirectErrorStream(true).start()
+                val out = proc.inputStream.bufferedReader().readText()
+                proc.waitFor(250, java.util.concurrent.TimeUnit.MILLISECONDS)
+                proc.destroy()
+                val timestamps = mutableListOf<Long>()
+                var inData = false
+                for (line in out.lineSequence()) {
+                    if (line.startsWith("---PROFILEDATA---")) {
+                        inData = !inData
+                        continue
+                    }
+                    if (inData && line.isNotBlank() && line[0].isDigit()) {
+                        val cols = line.split(",")
+                        if (cols.size > 2) {
+                            val vsync = cols[1].trim().toLongOrNull()
+                            if (vsync != null && vsync > 0L) timestamps.add(vsync)
+                        }
+                    }
+                }
+                if (timestamps.size >= 5) {
+                    val recent = timestamps.takeLast(30)
+                    val spanNs = recent.last() - recent.first()
+                    if (spanNs > 0L) {
+                        val fps = ((recent.size - 1) * 1_000_000_000.0 / spanNs).coerceIn(1.0, 144.0)
+                        fpsStr = String.format(Locale.US, "%.0f FPS", fps)
+                    }
+                }
+            }
+        } catch (_: Throwable) {}
+
+        return "$cpuStr|$tempStr|$gpuFreqStr|$gpuLoadStr|$fpsStr"
     }
 
     override fun destroy() {

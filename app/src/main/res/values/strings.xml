@@ -1,12 +1,12 @@
 <resources>
-    <string name="app_name">AYN Thor Simulator</string>
+    <string name="app_name">DroiDS</string>
     <string name="shizuku_waiting">Waiting for Shizuku service…</string>
     <string name="shizuku_not_running">Shizuku is not running. Start Shizuku via Wireless Debugging, then tap Retry.</string>
     <string name="shizuku_permission_needed">Shizuku permission is required to create virtual displays and inject input.</string>
     <string name="grant_shizuku">Grant Shizuku Permission</string>
     <string name="retry">Retry</string>
-    <string name="launcher_title">AYN Thor Launcher</string>
-    <string name="filter_apps">Filter / Hide Apps</string>
+    <string name="launcher_title">DroiDS Launcher</string>
+    <string name="filter_apps">Hide</string>
     <string name="show_all_apps">Show All</string>
     <string name="show_filtered_apps">Filtered</string>
 </resources>

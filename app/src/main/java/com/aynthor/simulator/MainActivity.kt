@@ -6,7 +6,26 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.content.ServiceConnection
+import android.content.res.Configuration
+import android.graphics.Color
+import android.os.BatteryManager
+import android.os.Handler
+import android.os.Looper
+import android.text.Editable
+import android.text.TextWatcher
+import android.widget.CheckBox
+import android.widget.EditText
+import android.widget.LinearLayout
+import android.widget.RadioButton
+import android.widget.RadioGroup
+import android.widget.ScrollView
+import android.widget.TextView
+import androidx.appcompat.app.AppCompatDelegate
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import android.content.pm.PackageManager
 import android.hardware.input.InputManager
 import android.os.Bundle
@@ -72,6 +91,21 @@ class MainActivity : AppCompatActivity() {
     private var allApps: List<AppInfo> = emptyList()
     private var physicalControllerConnected = false
     private var manualTouchOverride: Boolean? = null
+    private var topSearchQuery = ""
+    private var bottomSearchQuery = ""
+    private var selectedTopFolder: String? = null
+    private var selectedBottomFolder: String? = null
+    private var lastLauncherStickNavMs = 0L
+    private var isLightThemeActive = false
+    private val uiHandler = Handler(Looper.getMainLooper())
+    private val clockFormat = SimpleDateFormat("h:mm a", Locale.getDefault())
+    private val dateFormat = SimpleDateFormat("EEE, MMM d", Locale.getDefault())
+    private val homeRefreshRunnable = object : Runnable {
+        override fun run() {
+            updateBottomHomeDashboard()
+            uiHandler.postDelayed(this, 1500L)
+        }
+    }
 
     @Volatile private var leftStickX = 0f
     @Volatile private var leftStickY = 0f
@@ -105,7 +139,7 @@ class MainActivity : AppCompatActivity() {
             .daemon(false)
             .processNameSuffix("virtual_display_service")
             .debuggable(false)
-            .version(28)
+            .version(29)
     }
 
     private val serviceConnection = object : ServiceConnection {
@@ -176,8 +210,11 @@ class MainActivity : AppCompatActivity() {
         setupSurfaces()
         setupLauncher()
         setupUtilityBar()
+        setupBottomHomeScreen()
         setupVirtualGamepad()
+        applyAppTheme()
         updatePhysicalControllerState()
+        uiHandler.post(homeRefreshRunnable)
 
         Shizuku.addBinderReceivedListenerSticky(binderReceivedListener)
         Shizuku.addBinderDeadListener(binderDeadListener)
@@ -263,19 +300,28 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun setupLauncher() {
-        launcherAdapter = AppLauncherAdapter { app ->
-            launchAppOnDisplay(app, activeTopDisplayId, hideLauncherAfter = true)
-        }
+        launcherAdapter = AppLauncherAdapter(
+            onAppClick = { app ->
+                prefs.recordAppLaunch(app.packageName)
+                launchAppOnDisplay(app, activeTopDisplayId, hideLauncherAfter = true)
+            },
+            onAppLongClick = { app -> showAppContextMenu(app) }
+        )
         binding.appRecyclerView.apply {
             layoutManager = GridLayoutManager(this@MainActivity, 5)
             adapter = launcherAdapter
         }
 
-        bottomLauncherAdapter = AppLauncherAdapter { app ->
-            lastBottomPackage = app.packageName
-            binding.bottomLauncherOverlay.visibility = View.GONE
-            launchAppOnDisplay(app, activeBottomDisplayId, hideLauncherAfter = false)
-        }
+        bottomLauncherAdapter = AppLauncherAdapter(
+            onAppClick = { app ->
+                prefs.recordAppLaunch(app.packageName)
+                lastBottomPackage = app.packageName
+                binding.bottomLauncherOverlay.visibility = View.GONE
+                binding.bottomHomeOverlay.visibility = View.GONE
+                launchAppOnDisplay(app, activeBottomDisplayId, hideLauncherAfter = false)
+            },
+            onAppLongClick = { app -> showAppContextMenu(app) }
+        )
         binding.bottomAppRecyclerView.apply {
             layoutManager = GridLayoutManager(this@MainActivity, 3)
             adapter = bottomLauncherAdapter
@@ -288,7 +334,43 @@ class MainActivity : AppCompatActivity() {
             binding.bottomLauncherOverlay.visibility = View.GONE
         }
 
+        binding.etTopSearch.addTextChangedListener(object : TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
+                topSearchQuery = s?.toString()?.trim().orEmpty()
+                refreshLauncherList()
+            }
+            override fun afterTextChanged(s: Editable?) {}
+        })
+
+        binding.etBottomSearch.addTextChangedListener(object : TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
+                bottomSearchQuery = s?.toString()?.trim().orEmpty()
+                refreshLauncherList()
+            }
+            override fun afterTextChanged(s: Editable?) {}
+        })
+
+        binding.btnTopSort.setOnClickListener {
+            val next = (prefs.getTopSortMode() + 1) % 3
+            prefs.setTopSortMode(next)
+            updateDrawerFilterButtons()
+            refreshLauncherList()
+        }
+
+        binding.btnBottomSort.setOnClickListener {
+            val next = (prefs.getBottomSortMode() + 1) % 3
+            prefs.setBottomSortMode(next)
+            updateDrawerFilterButtons()
+            refreshLauncherList()
+        }
+
+        binding.btnTopFolder.setOnClickListener { showFolderPickerDialog(isTop = true) }
+        binding.btnBottomFolder.setOnClickListener { showFolderPickerDialog(isTop = false) }
+
         updateShowAllButtonText()
+        updateDrawerFilterButtons()
         binding.btnToggleShowAll.setOnClickListener {
             prefs.setShowAllApps(!prefs.isShowAllApps())
             updateShowAllButtonText()
@@ -304,8 +386,24 @@ class MainActivity : AppCompatActivity() {
             runOnUiThread {
                 allApps = loaded
                 refreshLauncherList()
+                if (launcherAdapter.itemCount > 0) {
+                    launcherAdapter.setSelectedPosition(0)
+                }
             }
         }
+    }
+
+    private fun sortLabel(mode: Int): String = when (mode) {
+        SimulatorPrefs.SORT_ZA -> "Z-A"
+        SimulatorPrefs.SORT_RECENT -> "Recent"
+        else -> "A-Z"
+    }
+
+    private fun updateDrawerFilterButtons() {
+        binding.btnTopSort.text = sortLabel(prefs.getTopSortMode())
+        binding.btnBottomSort.text = sortLabel(prefs.getBottomSortMode())
+        binding.btnTopFolder.text = selectedTopFolder ?: "All"
+        binding.btnBottomFolder.text = selectedBottomFolder ?: "All"
     }
 
     private fun updateShowAllButtonText() {
@@ -316,16 +414,120 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun refreshLauncherList() {
+    private fun filterAndSortApps(query: String, folder: String?, sortMode: Int): List<AppInfo> {
         val showAll = prefs.isShowAllApps()
         val hidden = prefs.getHiddenPackages()
-        val filtered = if (showAll) {
-            allApps
-        } else {
-            allApps.filterNot { hidden.contains(it.packageName) }
+        val folderPkgs = folder?.let { prefs.getAppsInFolder(it) }
+
+        val filtered = allApps.filter { app ->
+            val passHidden = showAll || !hidden.contains(app.packageName)
+            val passFolder = folderPkgs == null || folderPkgs.contains(app.packageName)
+            val passQuery = query.isEmpty() ||
+                app.label.contains(query, ignoreCase = true) ||
+                app.packageName.contains(query, ignoreCase = true)
+            passHidden && passFolder && passQuery
         }
-        launcherAdapter.submitList(filtered)
-        bottomLauncherAdapter.submitList(filtered)
+
+        return when (sortMode) {
+            SimulatorPrefs.SORT_ZA -> filtered.sortedByDescending { it.label.lowercase(Locale.getDefault()) }
+            SimulatorPrefs.SORT_RECENT -> filtered.sortedWith(
+                compareByDescending<AppInfo> { prefs.getLastLaunchTime(it.packageName) }
+                    .thenBy { it.label.lowercase(Locale.getDefault()) }
+            )
+            else -> filtered.sortedBy { it.label.lowercase(Locale.getDefault()) }
+        }
+    }
+
+    private fun refreshLauncherList() {
+        val topList = filterAndSortApps(topSearchQuery, selectedTopFolder, prefs.getTopSortMode())
+        val bottomList = filterAndSortApps(bottomSearchQuery, selectedBottomFolder, prefs.getBottomSortMode())
+        launcherAdapter.submitList(topList)
+        bottomLauncherAdapter.submitList(bottomList)
+        if (topList.isNotEmpty() && launcherAdapter.selectedPosition < 0) {
+            launcherAdapter.setSelectedPosition(0)
+        }
+    }
+
+    private fun showFolderPickerDialog(isTop: Boolean) {
+        val folders = prefs.getFolders()
+        val options = mutableListOf("All Apps")
+        options.addAll(folders)
+        options.add("+ Create New Folder")
+
+        AlertDialog.Builder(this)
+            .setTitle(if (isTop) "Top Drawer Folder" else "Bottom Drawer Folder")
+            .setItems(options.toTypedArray()) { _, which ->
+                when {
+                    which == 0 -> {
+                        if (isTop) selectedTopFolder = null else selectedBottomFolder = null
+                        updateDrawerFilterButtons()
+                        refreshLauncherList()
+                    }
+                    which == options.lastIndex -> showCreateFolderDialog()
+                    else -> {
+                        val chosen = folders[which - 1]
+                        if (isTop) selectedTopFolder = chosen else selectedBottomFolder = chosen
+                        updateDrawerFilterButtons()
+                        refreshLauncherList()
+                    }
+                }
+            }
+            .show()
+    }
+
+    private fun showCreateFolderDialog() {
+        val input = EditText(this).apply {
+            hint = "Folder name (e.g. Emulators, Switch)"
+            setSingleLine(true)
+        }
+        AlertDialog.Builder(this)
+            .setTitle("Create Folder")
+            .setView(input)
+            .setPositiveButton("Create") { _, _ ->
+                val name = input.text.toString().trim()
+                if (name.isNotEmpty()) {
+                    prefs.addFolder(name)
+                    Toast.makeText(this, "Folder "$name" created. Long-press any app to add it.", Toast.LENGTH_SHORT).show()
+                }
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private fun showAppContextMenu(app: AppInfo) {
+        val folders = prefs.getFolders()
+        val isHidden = prefs.getHiddenPackages().contains(app.packageName)
+        val actions = mutableListOf(
+            if (isHidden) "Unhide App" else "Hide App",
+            "Assign to Folders…"
+        )
+        AlertDialog.Builder(this)
+            .setTitle(app.label)
+            .setItems(actions.toTypedArray()) { _, which ->
+                when (which) {
+                    0 -> {
+                        prefs.setPackageHidden(app.packageName, !isHidden)
+                        refreshLauncherList()
+                    }
+                    1 -> {
+                        if (folders.isEmpty()) {
+                            showCreateFolderDialog()
+                        } else {
+                            val checked = BooleanArray(folders.size) { i ->
+                                prefs.getAppsInFolder(folders[i]).contains(app.packageName)
+                            }
+                            AlertDialog.Builder(this)
+                                .setTitle("Folders for ${app.label}")
+                                .setMultiChoiceItems(folders.toTypedArray(), checked) { _, idx, isChecked ->
+                                    prefs.setAppInFolder(folders[idx], app.packageName, isChecked)
+                                }
+                                .setPositiveButton("Done") { _, _ -> refreshLauncherList() }
+                                .show()
+                        }
+                    }
+                }
+            }
+            .show()
     }
 
     private fun showFilterAppsDialog() {
@@ -350,8 +552,15 @@ class MainActivity : AppCompatActivity() {
             val showing = binding.launcherOverlay.visibility == View.VISIBLE
             binding.launcherOverlay.visibility = if (showing) View.GONE else View.VISIBLE
             if (!showing) {
+                if (launcherAdapter.itemCount > 0 && launcherAdapter.selectedPosition < 0) {
+                    launcherAdapter.setSelectedPosition(0)
+                }
                 binding.appRecyclerView.requestFocus()
             }
+        }
+
+        binding.btnSettings.setOnClickListener {
+            showSettingsDialog()
         }
 
         binding.btnSwap.setOnClickListener {
@@ -431,10 +640,17 @@ class MainActivity : AppCompatActivity() {
         binding.virtualDpad.onKeyEvent = ::handleVirtualKey
         binding.virtualFaceButtons.onKeyEvent = ::handleVirtualKey
 
+        binding.virtualFaceButtons.isXboxLayout =
+            (prefs.getFaceButtonLayout() == SimulatorPrefs.FACE_LAYOUT_XBOX)
+
         binding.virtualLeftStick.onStickMove = { x, y ->
-            leftStickX = x
-            leftStickY = y
-            sendVirtualJoystick(force = (x == 0f && y == 0f))
+            if (binding.launcherOverlay.visibility == View.VISIBLE) {
+                handleTopLauncherStick(x, y)
+            } else {
+                leftStickX = x
+                leftStickY = y
+                sendVirtualJoystick(force = (x == 0f && y == 0f))
+            }
         }
 
         binding.virtualRightStick.onStickMove = { x, y ->
@@ -505,10 +721,9 @@ class MainActivity : AppCompatActivity() {
             keyDownTimes.remove(keyCode) ?: now
         }
 
-        // If launcher overlay is visible, route D-pad & A button locally to navigate the launcher
+        // If launcher overlay is visible, route virtual gamepad to navigate the top launcher
         if (binding.launcherOverlay.visibility == View.VISIBLE) {
-            val localEvent = KeyEvent(downTime, now, action, keyCode, 0)
-            super.dispatchKeyEvent(localEvent)
+            handleTopLauncherKey(keyCode, isDown)
             return
         }
 
@@ -615,6 +830,13 @@ class MainActivity : AppCompatActivity() {
             (event.source and InputDevice.SOURCE_JOYSTICK) == InputDevice.SOURCE_JOYSTICK
 
         if (event.device?.name == "AYN Thor X360 Pad") return true
+        if (isGamepadKey && binding.launcherOverlay.visibility == View.VISIBLE && !binding.etTopSearch.hasFocus()) {
+            if (event.action == KeyEvent.ACTION_DOWN || event.action == KeyEvent.ACTION_UP) {
+                if (handleTopLauncherKey(event.keyCode, event.action == KeyEvent.ACTION_DOWN)) {
+                    return true
+                }
+            }
+        }
         if (isGamepadKey && binding.launcherOverlay.visibility != View.VISIBLE) {
             val targetId = primaryDisplayId
             if (targetId > 0) {
@@ -641,6 +863,16 @@ class MainActivity : AppCompatActivity() {
             (event.source and InputDevice.SOURCE_GAMEPAD) == InputDevice.SOURCE_GAMEPAD
 
         if (event.device?.name == "AYN Thor X360 Pad") return true
+        if (isJoystick && binding.launcherOverlay.visibility == View.VISIBLE && !binding.etTopSearch.hasFocus()) {
+            val ax = event.getAxisValue(MotionEvent.AXIS_X)
+            val ay = event.getAxisValue(MotionEvent.AXIS_Y)
+            val hx = event.getAxisValue(MotionEvent.AXIS_HAT_X)
+            val hy = event.getAxisValue(MotionEvent.AXIS_HAT_Y)
+            val effX = if (kotlin.math.abs(hx) > 0.5f) hx else ax
+            val effY = if (kotlin.math.abs(hy) > 0.5f) hy else ay
+            handleTopLauncherStick(effX, effY)
+            return true
+        }
         if (isJoystick && binding.launcherOverlay.visibility != View.VISIBLE) {
             val targetId = primaryDisplayId
             if (targetId > 0) {
@@ -759,6 +991,7 @@ class MainActivity : AppCompatActivity() {
                 if (ok) {
                     binding.launcherOverlay.visibility = View.GONE
                     binding.bottomLauncherOverlay.visibility = View.GONE
+                    binding.bottomHomeOverlay.visibility = View.GONE
                     Toast.makeText(this, "Swapped top & bottom apps", Toast.LENGTH_SHORT).show()
                 } else {
                     Toast.makeText(this, "No active apps to swap", Toast.LENGTH_SHORT).show()
@@ -811,11 +1044,12 @@ class MainActivity : AppCompatActivity() {
                 ok = service.forceStopPackage(lastBottomPackage!!)
             }
             runOnUiThread {
+                binding.bottomHomeOverlay.visibility = View.VISIBLE
                 if (ok) {
                     lastBottomPackage = null
                     Toast.makeText(this, "Closed bottom app", Toast.LENGTH_SHORT).show()
                 } else {
-                    Toast.makeText(this, "No active app on bottom screen", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(this, "Returned to Bottom Home", Toast.LENGTH_SHORT).show()
                 }
             }
         }
@@ -938,6 +1172,347 @@ class MainActivity : AppCompatActivity() {
     }
 
 
+
+    private fun setupBottomHomeScreen() {
+        binding.btnHomeTopApps.setOnClickListener {
+            binding.launcherOverlay.visibility = View.VISIBLE
+            if (launcherAdapter.itemCount > 0 && launcherAdapter.selectedPosition < 0) {
+                launcherAdapter.setSelectedPosition(0)
+            }
+        }
+        binding.btnHomeBottomApps.setOnClickListener {
+            binding.bottomLauncherOverlay.visibility = View.VISIBLE
+        }
+        binding.btnHomeSettings.setOnClickListener {
+            showSettingsDialog()
+        }
+        binding.btnHomeSwap.setOnClickListener {
+            swapScreens()
+        }
+        binding.btnHomeHideDashboard.setOnClickListener {
+            binding.bottomHomeOverlay.visibility = View.GONE
+        }
+        applyBottomHomeWidgetVisibility()
+    }
+
+    private fun applyBottomHomeWidgetVisibility() {
+        binding.homeClockCard.visibility = if (prefs.isShowHomeClock()) View.VISIBLE else View.GONE
+        binding.homePerfCard.visibility = if (prefs.isShowHomePerf()) View.VISIBLE else View.GONE
+        binding.homeShortcutsCard.visibility = if (prefs.isShowHomeShortcuts()) View.VISIBLE else View.GONE
+    }
+
+    private fun updateBottomHomeDashboard() {
+        if (binding.bottomHomeOverlay.visibility != View.VISIBLE) return
+        val now = Date()
+        if (prefs.isShowHomeClock()) {
+            binding.tvHomeClock.text = clockFormat.format(now)
+            binding.tvHomeDate.text = dateFormat.format(now)
+        }
+        if (prefs.isShowHomePerf()) {
+            val battIntent = registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
+            val level = battIntent?.getIntExtra(BatteryManager.EXTRA_LEVEL, -1) ?: -1
+            val scale = battIntent?.getIntExtra(BatteryManager.EXTRA_SCALE, 100) ?: 100
+            val tempTenths = battIntent?.getIntExtra(BatteryManager.EXTRA_TEMPERATURE, 0) ?: 0
+            val status = battIntent?.getIntExtra(BatteryManager.EXTRA_STATUS, -1) ?: -1
+            val charging = status == BatteryManager.BATTERY_STATUS_CHARGING || status == BatteryManager.BATTERY_STATUS_FULL
+            val pct = if (level >= 0 && scale > 0) (level * 100 / scale) else -1
+            val battTempC = tempTenths / 10.0
+            val bolt = if (charging) " ⚡" else ""
+            binding.tvPerfBattery.text = if (pct >= 0) {
+                String.format(Locale.US, "BAT: %d%%%s (%.0f°C)", pct, bolt, battTempC)
+            } else {
+                "BAT: --%"
+            }
+
+            val svc = userService
+            val topDisp = primaryDisplayId
+            if (svc != null) {
+                ioExecutor.execute {
+                    val raw = try {
+                        svc.getPerformanceStats(topDisp)
+                    } catch (_: Throwable) {
+                        null
+                    }
+                    if (!raw.isNullOrBlank()) {
+                        val parts = raw.split("|")
+                        if (parts.size >= 5) {
+                            runOnUiThread {
+                                binding.tvPerfCpu.text = "CPU: ${parts[0]} (${parts[1]})"
+                                binding.tvPerfGpu.text = "GPU: ${parts[2]} (${parts[3]})"
+                                binding.tvPerfFps.text = "FPS: ${parts[4]}"
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private fun applyAppTheme() {
+        val mode = prefs.getThemeMode()
+        val nightMode = when (mode) {
+            SimulatorPrefs.THEME_LIGHT -> AppCompatDelegate.MODE_NIGHT_NO
+            SimulatorPrefs.THEME_DARK -> AppCompatDelegate.MODE_NIGHT_YES
+            else -> AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM
+        }
+        if (AppCompatDelegate.getDefaultNightMode() != nightMode) {
+            AppCompatDelegate.setDefaultNightMode(nightMode)
+        }
+
+        val isLight = when (mode) {
+            SimulatorPrefs.THEME_LIGHT -> true
+            SimulatorPrefs.THEME_DARK -> false
+            else -> (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) != Configuration.UI_MODE_NIGHT_YES
+        }
+        isLightThemeActive = isLight
+
+        val rootBg = Color.parseColor(if (isLight) "#F4F4F8" else "#000000")
+        val overlayBg = Color.parseColor(if (isLight) "#F2F4F4F8" else "#EE0B0B0F")
+        val cardBg = Color.parseColor(if (isLight) "#E4E4EC" else "#181820")
+        val inputBg = Color.parseColor(if (isLight) "#FFFFFF" else "#1E1E28")
+        val primaryText = Color.parseColor(if (isLight) "#18181B" else "#FFFFFF")
+        val secondaryText = Color.parseColor(if (isLight) "#52525B" else "#9CA3AF")
+        val pillBg = Color.parseColor(if (isLight) "#E4E4EC" else "#1A1A20")
+
+        binding.rootLayout.setBackgroundColor(rootBg)
+        binding.launcherOverlay.setBackgroundColor(overlayBg)
+        binding.bottomLauncherOverlay.setBackgroundColor(overlayBg)
+        binding.bottomHomeOverlay.setBackgroundColor(overlayBg)
+
+        binding.homeClockCard.setBackgroundColor(cardBg)
+        binding.homePerfCard.setBackgroundColor(cardBg)
+        binding.homeShortcutsCard.setBackgroundColor(cardBg)
+
+        binding.launcherTitle.setTextColor(primaryText)
+        binding.tvBottomLauncherTitle.setTextColor(primaryText)
+        binding.tvHomeClock.setTextColor(primaryText)
+        binding.tvHomeDate.setTextColor(secondaryText)
+        binding.tvPerfFps.setTextColor(primaryText)
+        binding.tvPerfCpu.setTextColor(secondaryText)
+        binding.tvPerfGpu.setTextColor(secondaryText)
+
+        binding.etTopSearch.setBackgroundColor(inputBg)
+        binding.etTopSearch.setTextColor(primaryText)
+        binding.etBottomSearch.setBackgroundColor(inputBg)
+        binding.etBottomSearch.setTextColor(primaryText)
+
+        binding.btnToggleLeftStick.setBackgroundColor(pillBg)
+        binding.btnToggleLeftStick.setTextColor(secondaryText)
+        binding.btnToggleRightStick.setBackgroundColor(pillBg)
+        binding.btnToggleRightStick.setTextColor(secondaryText)
+
+        launcherAdapter.isLightTheme = isLight
+        bottomLauncherAdapter.isLightTheme = isLight
+
+        binding.virtualDpad.applyTheme(isLight)
+        binding.virtualLeftStick.applyTheme(isLight)
+        binding.virtualFaceButtons.applyTheme(isLight)
+        binding.virtualRightStick.applyTheme(isLight)
+        binding.btnL1.applyTheme(isLight)
+        binding.btnL2.applyTheme(isLight)
+        binding.btnR1.applyTheme(isLight)
+        binding.btnR2.applyTheme(isLight)
+        binding.btnSelect.applyTheme(isLight)
+        binding.btnStart.applyTheme(isLight)
+    }
+
+    private fun showSettingsDialog() {
+        val scroll = ScrollView(this)
+        val container = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(48, 28, 48, 16)
+        }
+        scroll.addView(container)
+
+        fun addSectionHeader(title: String) {
+            container.addView(TextView(this).apply {
+                text = title
+                textSize = 13f
+                setTypeface(null, android.graphics.Typeface.BOLD)
+                setPadding(0, 20, 0, 8)
+            })
+        }
+
+        // 1. Face Button Layout
+        addSectionHeader("Face Button Layout (A/B/X/Y)")
+        val layoutGroup = RadioGroup(this)
+        val rbXbox = RadioButton(this).apply { text = "Xbox / GameSir (A bottom, B right, X left, Y top)" }
+        val rbNintendo = RadioButton(this).apply { text = "Nintendo (B bottom, A right, Y left, X top)" }
+        layoutGroup.addView(rbXbox)
+        layoutGroup.addView(rbNintendo)
+        if (prefs.getFaceButtonLayout() == SimulatorPrefs.FACE_LAYOUT_XBOX) {
+            rbXbox.isChecked = true
+        } else {
+            rbNintendo.isChecked = true
+        }
+        container.addView(layoutGroup)
+
+        // 2. Theme
+        addSectionHeader("Theme")
+        val themeGroup = RadioGroup(this)
+        val rbSystem = RadioButton(this).apply { text = "Follow System" }
+        val rbDark = RadioButton(this).apply { text = "Dark (AMOLED)" }
+        val rbLight = RadioButton(this).apply { text = "Light" }
+        themeGroup.addView(rbSystem)
+        themeGroup.addView(rbDark)
+        themeGroup.addView(rbLight)
+        when (prefs.getThemeMode()) {
+            SimulatorPrefs.THEME_LIGHT -> rbLight.isChecked = true
+            SimulatorPrefs.THEME_DARK -> rbDark.isChecked = true
+            else -> rbSystem.isChecked = true
+        }
+        container.addView(themeGroup)
+
+        // 3. Bottom Home Screen Widgets
+        addSectionHeader("Bottom Home Screen Widgets")
+        val cbClock = CheckBox(this).apply {
+            text = "Show Clock & Date"
+            isChecked = prefs.isShowHomeClock()
+        }
+        val cbPerf = CheckBox(this).apply {
+            text = "Show Performance Monitor (FPS, CPU, GPU, Battery)"
+            isChecked = prefs.isShowHomePerf()
+        }
+        val cbShortcuts = CheckBox(this).apply {
+            text = "Show Quick Shortcuts"
+            isChecked = prefs.isShowHomeShortcuts()
+        }
+        container.addView(cbClock)
+        container.addView(cbPerf)
+        container.addView(cbShortcuts)
+
+        // 4. Folders & Filters helper note
+        addSectionHeader("App Folders & Filters")
+        container.addView(TextView(this).apply {
+            text = "Tip: Long-press any app in the Top or Bottom drawer to assign it to a folder or hide it."
+            textSize = 12f
+        })
+
+        AlertDialog.Builder(this)
+            .setTitle("DroiDS Settings")
+            .setView(scroll)
+            .setPositiveButton("Save") { _, _ ->
+                val chosenLayout = if (rbXbox.isChecked) {
+                    SimulatorPrefs.FACE_LAYOUT_XBOX
+                } else {
+                    SimulatorPrefs.FACE_LAYOUT_NINTENDO
+                }
+                prefs.setFaceButtonLayout(chosenLayout)
+                binding.virtualFaceButtons.isXboxLayout = (chosenLayout == SimulatorPrefs.FACE_LAYOUT_XBOX)
+
+                val chosenTheme = when {
+                    rbLight.isChecked -> SimulatorPrefs.THEME_LIGHT
+                    rbDark.isChecked -> SimulatorPrefs.THEME_DARK
+                    else -> SimulatorPrefs.THEME_SYSTEM
+                }
+                prefs.setThemeMode(chosenTheme)
+
+                prefs.setShowHomeClock(cbClock.isChecked)
+                prefs.setShowHomePerf(cbPerf.isChecked)
+                prefs.setShowHomeShortcuts(cbShortcuts.isChecked)
+
+                applyBottomHomeWidgetVisibility()
+                applyAppTheme()
+                updateBottomHomeDashboard()
+            }
+            .setNeutralButton("Manage Folders") { _, _ ->
+                showManageFoldersDialog()
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private fun showManageFoldersDialog() {
+        val folders = prefs.getFolders()
+        val items = mutableListOf("+ Create New Folder")
+        items.addAll(folders.map { "Delete "$it"" })
+        AlertDialog.Builder(this)
+            .setTitle("Manage Folders")
+            .setItems(items.toTypedArray()) { _, which ->
+                if (which == 0) {
+                    showCreateFolderDialog()
+                } else {
+                    val toDelete = folders[which - 1]
+                    prefs.removeFolder(toDelete)
+                    if (selectedTopFolder == toDelete) selectedTopFolder = null
+                    if (selectedBottomFolder == toDelete) selectedBottomFolder = null
+                    updateDrawerFilterButtons()
+                    refreshLauncherList()
+                    Toast.makeText(this, "Deleted folder "$toDelete"", Toast.LENGTH_SHORT).show()
+                }
+            }
+            .setNegativeButton("Close", null)
+            .show()
+    }
+
+    private fun handleTopLauncherKey(keyCode: Int, isDown: Boolean): Boolean {
+        if (!isDown) {
+            return keyCode in listOf(
+                KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_DPAD_DOWN,
+                KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_DPAD_RIGHT,
+                KeyEvent.KEYCODE_BUTTON_A, KeyEvent.KEYCODE_BUTTON_B,
+                KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER,
+                KeyEvent.KEYCODE_BUTTON_L1, KeyEvent.KEYCODE_BUTTON_R1
+            )
+        }
+        return when (keyCode) {
+            KeyEvent.KEYCODE_DPAD_LEFT -> { moveTopLauncherSelection(-1); true }
+            KeyEvent.KEYCODE_DPAD_RIGHT -> { moveTopLauncherSelection(1); true }
+            KeyEvent.KEYCODE_DPAD_UP -> { moveTopLauncherSelection(-5); true }
+            KeyEvent.KEYCODE_DPAD_DOWN -> { moveTopLauncherSelection(5); true }
+            KeyEvent.KEYCODE_BUTTON_A, KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER -> {
+                launcherAdapter.getSelectedItem()?.let { app ->
+                    prefs.recordAppLaunch(app.packageName)
+                    launchAppOnDisplay(app, activeTopDisplayId, hideLauncherAfter = true)
+                }
+                true
+            }
+            KeyEvent.KEYCODE_BUTTON_B -> {
+                binding.launcherOverlay.visibility = View.GONE
+                true
+            }
+            KeyEvent.KEYCODE_BUTTON_L1 -> { cycleTopFolder(-1); true }
+            KeyEvent.KEYCODE_BUTTON_R1 -> { cycleTopFolder(1); true }
+            else -> false
+        }
+    }
+
+    private fun handleTopLauncherStick(x: Float, y: Float) {
+        val now = SystemClock.uptimeMillis()
+        if (now - lastLauncherStickNavMs < 180L) return
+        val delta = when {
+            x < -0.55f -> -1
+            x > 0.55f -> 1
+            y < -0.55f -> -5
+            y > 0.55f -> 5
+            else -> 0
+        }
+        if (delta != 0) {
+            lastLauncherStickNavMs = now
+            moveTopLauncherSelection(delta)
+        }
+    }
+
+    private fun moveTopLauncherSelection(delta: Int) {
+        val count = launcherAdapter.itemCount
+        if (count <= 0) return
+        val current = if (launcherAdapter.selectedPosition < 0) 0 else launcherAdapter.selectedPosition
+        val next = (current + delta).coerceIn(0, count - 1)
+        launcherAdapter.setSelectedPosition(next)
+        binding.appRecyclerView.smoothScrollToPosition(next)
+    }
+
+    private fun cycleTopFolder(step: Int) {
+        val allFolders = listOf<String?>(null) + prefs.getFolders()
+        if (allFolders.size <= 1) return
+        val idx = allFolders.indexOf(selectedTopFolder).coerceAtLeast(0)
+        val nextIdx = (idx + step + allFolders.size) % allFolders.size
+        selectedTopFolder = allFolders[nextIdx]
+        updateDrawerFilterButtons()
+        refreshLauncherList()
+        if (launcherAdapter.itemCount > 0) launcherAdapter.setSelectedPosition(0)
+    }
+
     override fun onPause() {
         super.onPause()
         // Release any held virtual keys so nothing stays stuck when switching apps
@@ -965,6 +1540,7 @@ class MainActivity : AppCompatActivity() {
         Shizuku.removeRequestPermissionResultListener(permissionResultListener)
         inputManager.unregisterInputDeviceListener(inputDeviceListener)
         teardownShizukuDisplays()
+        uiHandler.removeCallbacks(homeRefreshRunnable)
         ioExecutor.shutdownNow()
         inputExecutor.shutdownNow()
     }
