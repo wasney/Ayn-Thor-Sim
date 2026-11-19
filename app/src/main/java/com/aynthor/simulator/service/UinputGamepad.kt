@@ -48,6 +48,7 @@ class UinputGamepad(private val logger: (String) -> Unit) {
     private var writer: BufferedWriter? = null
     @Volatile var isActive: Boolean = false
         private set
+    @Volatile private var hasError: Boolean = false
 
     private var dpadU = false
     private var dpadD = false
@@ -56,8 +57,13 @@ class UinputGamepad(private val logger: (String) -> Unit) {
     private var lastHatX = 0
     private var lastHatY = 0
 
+    private fun absEntry(code: Int, min: Int, max: Int): String {
+        return """{"code":$code,"info":{"value":0,"minimum":$min,"maximum":$max,"fuzz":0,"flat":0,"resolution":0}}"""
+    }
+
     fun start(): Boolean {
         if (isActive && process?.isAlive == true) return true
+        hasError = false
         return try {
             val proc = ProcessBuilder("/system/bin/uinput", "-")
                 .redirectErrorStream(true)
@@ -72,6 +78,10 @@ class UinputGamepad(private val logger: (String) -> Unit) {
                         while (true) {
                             val line = br.readLine() ?: break
                             logger("uinput: $line")
+                            if (line.contains("Error", ignoreCase = true)) {
+                                hasError = true
+                                isActive = false
+                            }
                         }
                     }
                 } catch (_: Throwable) {
@@ -80,43 +90,30 @@ class UinputGamepad(private val logger: (String) -> Unit) {
                 }
             }
 
-            val registerJson = """
-                {
-                  "id": 1,
-                  "command": "register",
-                  "name": "$DEVICE_NAME",
-                  "vid": 1118,
-                  "pid": 654,
-                  "bus": "usb",
-                  "configuration": [
-                    {"type": "UI_SET_EVBIT", "data": ["EV_KEY", "EV_ABS"]},
-                    {"type": "UI_SET_KEYBIT", "data": [$BTN_A, $BTN_B, $BTN_X, $BTN_Y, $BTN_TL, $BTN_TR, $BTN_SELECT, $BTN_START, $BTN_THUMBL, $BTN_THUMBR]},
-                    {"type": "UI_SET_ABSBIT", "data": [$ABS_X, $ABS_Y, $ABS_Z, $ABS_RX, $ABS_RY, $ABS_RZ, $ABS_HAT0X, $ABS_HAT0Y]}
-                  ],
-                  "abs_info": {
-                    "$ABS_X": {"minimum": -32767, "maximum": 32767, "fuzz": 0, "flat": 0},
-                    "$ABS_Y": {"minimum": -32767, "maximum": 32767, "fuzz": 0, "flat": 0},
-                    "$ABS_RX": {"minimum": -32767, "maximum": 32767, "fuzz": 0, "flat": 0},
-                    "$ABS_RY": {"minimum": -32767, "maximum": 32767, "fuzz": 0, "flat": 0},
-                    "$ABS_Z": {"minimum": 0, "maximum": 255, "fuzz": 0, "flat": 0},
-                    "$ABS_RZ": {"minimum": 0, "maximum": 255, "fuzz": 0, "flat": 0},
-                    "$ABS_HAT0X": {"minimum": -1, "maximum": 1, "fuzz": 0, "flat": 0},
-                    "$ABS_HAT0Y": {"minimum": -1, "maximum": 1, "fuzz": 0, "flat": 0}
-                  }
-                }
-            """.trimIndent().replace("\n", " ")
+            val absArray = listOf(
+                absEntry(ABS_X, -32767, 32767),
+                absEntry(ABS_Y, -32767, 32767),
+                absEntry(ABS_RX, -32767, 32767),
+                absEntry(ABS_RY, -32767, 32767),
+                absEntry(ABS_Z, 0, 255),
+                absEntry(ABS_RZ, 0, 255),
+                absEntry(ABS_HAT0X, -1, 1),
+                absEntry(ABS_HAT0Y, -1, 1)
+            ).joinToString(",")
+
+            val registerJson = """{"id":1,"command":"register","name":"$DEVICE_NAME","vid":1118,"pid":654,"bus":"usb","configuration":[{"type":"UI_SET_EVBIT","data":["EV_KEY","EV_ABS"]},{"type":"UI_SET_KEYBIT","data":[$BTN_A,$BTN_B,$BTN_X,$BTN_Y,$BTN_TL,$BTN_TR,$BTN_SELECT,$BTN_START,$BTN_THUMBL,$BTN_THUMBR]},{"type":"UI_SET_ABSBIT","data":[$ABS_X,$ABS_Y,$ABS_Z,$ABS_RX,$ABS_RY,$ABS_RZ,$ABS_HAT0X,$ABS_HAT0Y]}],"abs_info":[$absArray]}"""
 
             w.write(registerJson)
             w.newLine()
             w.flush()
 
-            Thread.sleep(250)
-            if (proc.isAlive) {
+            Thread.sleep(300)
+            if (proc.isAlive && !hasError) {
                 isActive = true
                 logger("uinput Xbox 360 controller registered ($DEVICE_NAME)")
                 true
             } else {
-                logger("uinput exited early with code ${proc.exitValue()}")
+                logger("uinput registration failed (alive=${proc.isAlive}, hasError=$hasError); using InputManager fallback")
                 stop()
                 false
             }
@@ -129,7 +126,7 @@ class UinputGamepad(private val logger: (String) -> Unit) {
 
     @Synchronized
     fun sendKey(keyCode: Int, isDown: Boolean): Boolean {
-        if (!isActive) return false
+        if (!isActive || hasError) return false
         val events = mutableListOf<Int>()
 
         when (keyCode) {
@@ -182,7 +179,7 @@ class UinputGamepad(private val logger: (String) -> Unit) {
 
     @Synchronized
     fun sendAxes(lx: Float, ly: Float, rx: Float, ry: Float): Boolean {
-        if (!isActive) return false
+        if (!isActive || hasError) return false
         val ix = (lx.coerceIn(-1f, 1f) * 32767f).toInt()
         val iy = (ly.coerceIn(-1f, 1f) * 32767f).toInt()
         val irx = (rx.coerceIn(-1f, 1f) * 32767f).toInt()
