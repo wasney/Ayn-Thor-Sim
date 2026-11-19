@@ -672,16 +672,15 @@ class VirtualDisplayUserService(private val baseContext: Context) : IVirtualDisp
 
             val topTaskId = topTasks.firstOrNull()?.let { extractTaskId(it) } ?: -1
             val bottomTaskId = bottomTasks.firstOrNull()?.let { extractTaskId(it) } ?: -1
+            if (topTaskId <= 0 || bottomTaskId <= 0) {
+                log("swapTasksBetweenDisplays: single/Presentation mode (topTask=$topTaskId, bottomTask=$bottomTaskId) -> using surface swap")
+                return false
+            }
             invalidateFocusCache()
             log("swapTasksBetweenDisplays: topTask=$topTaskId -> $bottomDisplayId, bottomTask=$bottomTaskId -> $topDisplayId")
-
-            if (topTaskId > 0) {
-                moveMethod.invoke(atm, topTaskId, bottomDisplayId)
-            }
-            if (bottomTaskId > 0) {
-                moveMethod.invoke(atm, bottomTaskId, topDisplayId)
-            }
-            topTaskId > 0 || bottomTaskId > 0
+            moveMethod.invoke(atm, topTaskId, bottomDisplayId)
+            moveMethod.invoke(atm, bottomTaskId, topDisplayId)
+            true
         } catch (e: Throwable) {
             log("swapTasksBetweenDisplays failed", e)
             false
