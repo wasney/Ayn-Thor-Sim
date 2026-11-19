@@ -49,6 +49,7 @@ class SimulatorPrefs(context: Context) {
         private const val KEY_SHOW_L3_R3 = "show_l3_r3"
         private const val KEY_USE_KERNEL_GAMEPAD = "use_kernel_gamepad"
         private const val KEY_DPAD_FOUR_WAY = "dpad_four_way"
+        private const val KEY_ONBOARDING_COMPLETED = "onboarding_completed"
         private const val KEY_PROFILE_PACKAGES = "app_profile_packages"
         private const val PREFIX_APP_PROFILE = "app_profile_"
 
@@ -474,5 +475,11 @@ class SimulatorPrefs(context: Context) {
         } catch (_: Throwable) {
             false
         }
+    }
+
+    fun isOnboardingCompleted(): Boolean = prefs.getBoolean(KEY_ONBOARDING_COMPLETED, false)
+
+    fun setOnboardingCompleted(completed: Boolean) {
+        prefs.edit().putBoolean(KEY_ONBOARDING_COMPLETED, completed).apply()
     }
 }

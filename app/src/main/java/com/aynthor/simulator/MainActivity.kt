@@ -62,6 +62,7 @@ import com.aynthor.simulator.launcher.AppRepository
 import androidx.activity.OnBackPressedCallback
 import com.aynthor.simulator.prefs.SimulatorPrefs
 import com.aynthor.simulator.ui.SettingsSheetController
+import com.aynthor.simulator.ui.OnboardingOverlayController
 import com.aynthor.simulator.service.VirtualDisplayUserService
 import rikka.shizuku.Shizuku
 import java.util.concurrent.Executors
@@ -81,6 +82,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var binding: ActivityMainBinding
     private lateinit var prefs: SimulatorPrefs
     private lateinit var settingsSheet: SettingsSheetController
+    private lateinit var onboardingOverlay: OnboardingOverlayController
     private lateinit var inputManager: InputManager
     private lateinit var launcherAdapter: AppLauncherAdapter
     private lateinit var bottomLauncherAdapter: AppLauncherAdapter
@@ -196,7 +198,7 @@ class MainActivity : AppCompatActivity() {
             .daemon(false)
             .processNameSuffix("virtual_display_service")
             .debuggable(false)
-            .version(50)
+            .version(51)
     }
 
     private val serviceConnection = object : ServiceConnection {
@@ -266,6 +268,9 @@ class MainActivity : AppCompatActivity() {
             if (::settingsSheet.isInitialized && v.height > 0) {
                 settingsSheet.updateSheetHeight(v.height)
             }
+            if (::onboardingOverlay.isInitialized) {
+                onboardingOverlay.onLayoutSizeChanged()
+            }
         }
         setupSurfaces()
         setupLauncher()
@@ -273,9 +278,12 @@ class MainActivity : AppCompatActivity() {
         setupBottomHomeScreen()
         setupVirtualGamepad()
         setupSettingsSheet()
+        setupOnboardingOverlay()
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
-                if (::settingsSheet.isInitialized && settingsSheet.isVisible) {
+                if (::onboardingOverlay.isInitialized && onboardingOverlay.isInWizardMode) {
+                    onboardingOverlay.dismiss(markOnboardingDone = true)
+                } else if (::settingsSheet.isInitialized && settingsSheet.isVisible) {
                     settingsSheet.dismiss()
                 } else {
                     isEnabled = false
@@ -299,6 +307,10 @@ class MainActivity : AppCompatActivity() {
         Shizuku.addRequestPermissionResultListener(permissionResultListener)
         inputManager.registerInputDeviceListener(inputDeviceListener, null)
 
+        if (!prefs.isOnboardingCompleted()) {
+            onboardingOverlay.refreshTheme(isLightThemeActive)
+            onboardingOverlay.showWizard(startStep = 0)
+        }
         checkShizukuAndBind()
     }
 
@@ -412,7 +424,8 @@ class MainActivity : AppCompatActivity() {
         val needsFocus = binding.launcherOverlay.visibility == View.VISIBLE ||
             binding.bottomLauncherOverlay.visibility == View.VISIBLE ||
             binding.shizukuOverlay.visibility == View.VISIBLE ||
-            (::settingsSheet.isInitialized && settingsSheet.isVisible)
+            (::settingsSheet.isInitialized && settingsSheet.isVisible) ||
+            (::onboardingOverlay.isInitialized && onboardingOverlay.isVisible)
         val shouldBeNotFocusable = !needsFocus
         if (shouldBeNotFocusable == isWindowNotFocusable) return
         isWindowNotFocusable = shouldBeNotFocusable
@@ -1315,6 +1328,10 @@ class MainActivity : AppCompatActivity() {
         }
 
         binding.shizukuOverlay.visibility = View.GONE
+        if (::onboardingOverlay.isInitialized) {
+            onboardingOverlay.dismissIfReconnectMode()
+            onboardingOverlay.refreshLiveStatus()
+        }
         if (!isServiceBound) {
             try {
                 Shizuku.bindUserService(userServiceArgs, serviceConnection)
@@ -1327,19 +1344,13 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun showShizukuOverlay(message: String, showAction: Boolean, isPermission: Boolean) {
-        binding.shizukuOverlay.visibility = View.VISIBLE
-        binding.shizukuStatusText.text = message
-        binding.btnShizukuAction.visibility = if (showAction) View.VISIBLE else View.GONE
-        binding.btnShizukuAction.text = if (isPermission) {
-            getString(R.string.grant_shizuku)
-        } else {
-            getString(R.string.retry)
-        }
-        binding.btnShizukuAction.setOnClickListener {
-            if (isPermission && Shizuku.pingBinder()) {
-                Shizuku.requestPermission(SHIZUKU_PERMISSION_CODE)
+        binding.shizukuOverlay.visibility = View.GONE
+        if (::onboardingOverlay.isInitialized) {
+            onboardingOverlay.refreshTheme(isLightThemeActive)
+            if (onboardingOverlay.isInWizardMode) {
+                onboardingOverlay.refreshLiveStatus()
             } else {
-                checkShizukuAndBind()
+                onboardingOverlay.showShizukuReconnect(message)
             }
         }
     }
@@ -1949,6 +1960,7 @@ class MainActivity : AppCompatActivity() {
         }
         isLightThemeActive = isLight
         if (::settingsSheet.isInitialized) settingsSheet.refreshTheme(isLight)
+        if (::onboardingOverlay.isInitialized) onboardingOverlay.refreshTheme(isLight)
 
         val rootBg = Color.parseColor(if (isLight) "#F4F4F8" else "#000000")
         val overlayBg = Color.parseColor(if (isLight) "#F2F4F4F8" else "#EE0B0B0F")
@@ -2060,12 +2072,44 @@ class MainActivity : AppCompatActivity() {
                     importBackupLauncher.launch(arrayOf("application/json", "text/plain", "*/*"))
                 }
 
+                override fun onReplayOnboardingRequested() {
+                    if (::onboardingOverlay.isInitialized) {
+                        onboardingOverlay.refreshTheme(isLightThemeActive)
+                        onboardingOverlay.showWizard(startStep = 0)
+                    }
+                }
+
                 override fun onVisibilityChanged(visible: Boolean) {
                     updateWindowFocusability()
                 }
             }
         )
         settingsSheet.attachTo(binding.rootLayout)
+    }
+
+    private fun setupOnboardingOverlay() {
+        onboardingOverlay = OnboardingOverlayController(
+            context = this,
+            prefs = prefs,
+            callbacks = object : OnboardingOverlayController.Callbacks {
+                override fun onRequestShizukuPermission() {
+                    if (Shizuku.pingBinder()) {
+                        Shizuku.requestPermission(SHIZUKU_PERMISSION_CODE)
+                    } else {
+                        checkShizukuAndBind()
+                    }
+                }
+
+                override fun onRetryShizukuBind() {
+                    checkShizukuAndBind()
+                }
+
+                override fun onVisibilityChanged(visible: Boolean) {
+                    updateWindowFocusability()
+                }
+            }
+        )
+        onboardingOverlay.attachTo(binding.rootLayout)
     }
 
     private fun showSettingsDialog() {
@@ -2225,6 +2269,16 @@ class MainActivity : AppCompatActivity() {
         updateDrawerFilterButtons()
         refreshLauncherList()
         if (launcherAdapter.itemCount > 0) launcherAdapter.setSelectedPosition(0)
+    }
+
+    override fun onResume() {
+        super.onResume()
+        if (::onboardingOverlay.isInitialized) {
+            onboardingOverlay.refreshLiveStatus()
+        }
+        if (!isServiceBound || !Shizuku.pingBinder()) {
+            checkShizukuAndBind()
+        }
     }
 
     override fun onPause() {

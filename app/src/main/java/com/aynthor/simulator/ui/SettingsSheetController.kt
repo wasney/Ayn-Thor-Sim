@@ -50,6 +50,7 @@ class SettingsSheetController(
         fun onDrawerSettingsChanged()
         fun onExportBackupRequested()
         fun onImportBackupRequested()
+        fun onReplayOnboardingRequested()
         fun onVisibilityChanged(visible: Boolean)
     }
 
@@ -1078,6 +1079,20 @@ class SettingsSheetController(
         })
         backupCard.addView(importBtn)
         contentContainer.addView(backupCard)
+
+        val guideCard = createFocusCard("Setup & Controls Guide")
+        guideCard.addView(
+            createActionRowButton(
+                title = "Replay Welcome & Shizuku Guide",
+                subtitle = "Reopen Shizuku setup shortcuts and controls tour",
+                iconRes = R.drawable.ic_settings_display,
+                primary = false
+            ) {
+                dismiss()
+                callbacks.onReplayOnboardingRequested()
+            }
+        )
+        contentContainer.addView(guideCard)
     }
 
     // -------------------------------------------------------------------------
