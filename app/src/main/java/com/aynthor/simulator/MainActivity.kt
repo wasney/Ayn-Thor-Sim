@@ -193,7 +193,7 @@ class MainActivity : AppCompatActivity() {
             .daemon(false)
             .processNameSuffix("virtual_display_service")
             .debuggable(false)
-            .version(47)
+            .version(48)
     }
 
     private val serviceConnection = object : ServiceConnection {
@@ -1770,7 +1770,11 @@ class MainActivity : AppCompatActivity() {
                 if (fromUser) audioMgr.setStreamVolume(AudioManager.STREAM_MUSIC, progress, 0)
             }
             override fun onStartTrackingTouch(sb: SeekBar?) {}
-            override fun onStopTrackingTouch(sb: SeekBar?) {}
+            override fun onStopTrackingTouch(sb: SeekBar?) {
+                if (primaryDisplayId > 0) {
+                    ioExecutor.execute { userService?.focusDisplay(primaryDisplayId) }
+                }
+            }
         })
 
         val curBright = window.attributes.screenBrightness
@@ -1784,7 +1788,11 @@ class MainActivity : AppCompatActivity() {
                 }
             }
             override fun onStartTrackingTouch(sb: SeekBar?) {}
-            override fun onStopTrackingTouch(sb: SeekBar?) {}
+            override fun onStopTrackingTouch(sb: SeekBar?) {
+                if (primaryDisplayId > 0) {
+                    ioExecutor.execute { userService?.focusDisplay(primaryDisplayId) }
+                }
+            }
         })
 
         binding.btnCcWifi.setOnClickListener {
