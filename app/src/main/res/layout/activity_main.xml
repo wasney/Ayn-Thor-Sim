@@ -137,6 +137,63 @@
             android:id="@+id/bottomSurfaceView"
             android:layout_width="match_parent"
             android:layout_height="match_parent" />
+
+        <!-- Bottom Screen Icon App Launcher Overlay -->
+        <LinearLayout
+            android:id="@+id/bottomLauncherOverlay"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:background="#EE0B0B0F"
+            android:orientation="vertical"
+            android:padding="10dp"
+            android:visibility="gone">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:gravity="center_vertical"
+                android:orientation="horizontal"
+                android:paddingBottom="6dp">
+
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="Bottom Screen Apps"
+                    android:textColor="#FFFFFF"
+                    android:textSize="14sp"
+                    android:textStyle="bold" />
+
+                <Button
+                    android:id="@+id/btnCloseBottomApp"
+                    style="@style/Widget.Material3.Button.OutlinedButton"
+                    android:layout_width="wrap_content"
+                    android:layout_height="32dp"
+                    android:layout_marginEnd="6dp"
+                    android:insetTop="0dp"
+                    android:insetBottom="0dp"
+                    android:text="Close App"
+                    android:textColor="#EF4444"
+                    android:textSize="11sp" />
+
+                <Button
+                    android:id="@+id/btnCancelBottomLauncher"
+                    style="@style/Widget.Material3.Button.TonalButton"
+                    android:layout_width="wrap_content"
+                    android:layout_height="32dp"
+                    android:insetTop="0dp"
+                    android:insetBottom="0dp"
+                    android:text="Done"
+                    android:textSize="11sp" />
+            </LinearLayout>
+
+            <androidx.recyclerview.widget.RecyclerView
+                android:id="@+id/bottomAppRecyclerView"
+                android:layout_width="match_parent"
+                android:layout_height="0dp"
+                android:layout_weight="1"
+                android:clipToPadding="false" />
+        </LinearLayout>
     </FrameLayout>
 
     <!-- Left Sidebar (Utility Icons + Left Virtual Gamepad) -->
@@ -185,6 +242,16 @@
                 android:background="?attr/selectableItemBackgroundBorderless"
                 android:contentDescription="Launch on Bottom"
                 android:src="@android:drawable/ic_menu_add"
+                android:tint="#9CA3AF" />
+
+            <ImageButton
+                android:id="@+id/btnCloseBottom"
+                android:layout_width="34dp"
+                android:layout_height="34dp"
+                android:layout_marginStart="2dp"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:contentDescription="Close Bottom App"
+                android:src="@android:drawable/ic_delete"
                 android:tint="#9CA3AF" />
 
             <TextView

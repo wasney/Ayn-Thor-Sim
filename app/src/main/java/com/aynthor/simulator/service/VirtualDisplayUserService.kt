@@ -470,6 +470,20 @@ class VirtualDisplayUserService(private val baseContext: Context) : IVirtualDisp
         }
     }
 
+    override fun forceStopPackage(packageName: String): Boolean {
+        return try {
+            val process = ProcessBuilder("am", "force-stop", packageName)
+                .redirectErrorStream(true)
+                .start()
+            val exitCode = process.waitFor()
+            log("am force-stop $packageName -> exitCode=$exitCode")
+            exitCode == 0
+        } catch (e: Throwable) {
+            log("am force-stop $packageName failed", e)
+            false
+        }
+    }
+
     override fun getDebugLog(): String {
         return logLines.joinToString("\n")
     }

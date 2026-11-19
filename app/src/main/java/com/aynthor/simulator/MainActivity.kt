@@ -49,6 +49,8 @@ class MainActivity : AppCompatActivity() {
     private lateinit var prefs: SimulatorPrefs
     private lateinit var inputManager: InputManager
     private lateinit var launcherAdapter: AppLauncherAdapter
+    private lateinit var bottomLauncherAdapter: AppLauncherAdapter
+    private var lastBottomPackage: String? = null
 
     private val ioExecutor = Executors.newSingleThreadExecutor()
 
@@ -178,7 +180,6 @@ class MainActivity : AppCompatActivity() {
         binding.topSurfaceView.apply {
             virtualWidth = TOP_WIDTH
             virtualHeight = TOP_HEIGHT
-            holder.setFixedSize(TOP_WIDTH, TOP_HEIGHT)
             touchForwardingEnabled = prefs.isTopTouchForwardingEnabled()
             onTouchInject = { displayId, action, downTime, eventTime, count, ids, xs, ys, pressures ->
                 ioExecutor.execute {
@@ -202,7 +203,6 @@ class MainActivity : AppCompatActivity() {
         binding.bottomSurfaceView.apply {
             virtualWidth = BOTTOM_WIDTH
             virtualHeight = BOTTOM_HEIGHT
-            holder.setFixedSize(BOTTOM_WIDTH, BOTTOM_HEIGHT)
             touchForwardingEnabled = true
             onTouchInject = { displayId, action, downTime, eventTime, count, ids, xs, ys, pressures ->
                 ioExecutor.execute {
@@ -231,6 +231,23 @@ class MainActivity : AppCompatActivity() {
         binding.appRecyclerView.apply {
             layoutManager = GridLayoutManager(this@MainActivity, 5)
             adapter = launcherAdapter
+        }
+
+        bottomLauncherAdapter = AppLauncherAdapter { app ->
+            lastBottomPackage = app.packageName
+            binding.bottomLauncherOverlay.visibility = View.GONE
+            launchAppOnDisplay(app, activeBottomDisplayId, hideLauncherAfter = false)
+        }
+        binding.bottomAppRecyclerView.apply {
+            layoutManager = GridLayoutManager(this@MainActivity, 3)
+            adapter = bottomLauncherAdapter
+        }
+        binding.btnCancelBottomLauncher.setOnClickListener {
+            binding.bottomLauncherOverlay.visibility = View.GONE
+        }
+        binding.btnCloseBottomApp.setOnClickListener {
+            closeBottomApp()
+            binding.bottomLauncherOverlay.visibility = View.GONE
         }
 
         updateShowAllButtonText()
@@ -270,6 +287,7 @@ class MainActivity : AppCompatActivity() {
             allApps.filterNot { hidden.contains(it.packageName) }
         }
         launcherAdapter.submitList(filtered)
+        bottomLauncherAdapter.submitList(filtered)
     }
 
     private fun showFilterAppsDialog() {
@@ -303,7 +321,12 @@ class MainActivity : AppCompatActivity() {
         }
 
         binding.btnLaunchBottom.setOnClickListener {
-            showLaunchOnBottomPicker()
+            val showing = binding.bottomLauncherOverlay.visibility == View.VISIBLE
+            binding.bottomLauncherOverlay.visibility = if (showing) View.GONE else View.VISIBLE
+        }
+
+        binding.btnCloseBottom.setOnClickListener {
+            closeBottomApp()
         }
 
         binding.btnToggleTouch.setOnClickListener {
@@ -654,13 +677,11 @@ class MainActivity : AppCompatActivity() {
                 targetDisplayId = secondaryDisplayId
                 virtualWidth = BOTTOM_WIDTH
                 virtualHeight = BOTTOM_HEIGHT
-                holder.setFixedSize(BOTTOM_WIDTH, BOTTOM_HEIGHT)
             }
             binding.bottomSurfaceView.apply {
                 targetDisplayId = primaryDisplayId
                 virtualWidth = TOP_WIDTH
                 virtualHeight = TOP_HEIGHT
-                holder.setFixedSize(TOP_WIDTH, TOP_HEIGHT)
             }
             topParams.dimensionRatio = "1240:1080"
             bottomParams.dimensionRatio = "16:9"
@@ -669,19 +690,36 @@ class MainActivity : AppCompatActivity() {
                 targetDisplayId = primaryDisplayId
                 virtualWidth = TOP_WIDTH
                 virtualHeight = TOP_HEIGHT
-                holder.setFixedSize(TOP_WIDTH, TOP_HEIGHT)
             }
             binding.bottomSurfaceView.apply {
                 targetDisplayId = secondaryDisplayId
                 virtualWidth = BOTTOM_WIDTH
                 virtualHeight = BOTTOM_HEIGHT
-                holder.setFixedSize(BOTTOM_WIDTH, BOTTOM_HEIGHT)
             }
             topParams.dimensionRatio = "16:9"
             bottomParams.dimensionRatio = "1240:1080"
         }
         binding.topScreenContainer.layoutParams = topParams
         binding.bottomScreenContainer.layoutParams = bottomParams
+    }
+
+    private fun closeBottomApp() {
+        val pkg = lastBottomPackage
+        if (pkg.isNullOrBlank()) {
+            Toast.makeText(this, "No bottom app tracked yet", Toast.LENGTH_SHORT).show()
+            return
+        }
+        ioExecutor.execute {
+            val ok = userService?.forceStopPackage(pkg) == true
+            runOnUiThread {
+                if (ok) {
+                    lastBottomPackage = null
+                    Toast.makeText(this, "Closed bottom app", Toast.LENGTH_SHORT).show()
+                } else {
+                    Toast.makeText(this, "Failed to close $pkg", Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
     }
 
     private fun showLaunchOnBottomPicker() {

@@ -61,4 +61,6 @@ interface IVirtualDisplayService {
     void releaseDisplays() = 7;
 
     String getDebugLog() = 8;
+
+    boolean forceStopPackage(String packageName) = 9;
 }
