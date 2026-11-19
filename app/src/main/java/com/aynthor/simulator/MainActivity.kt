@@ -562,7 +562,7 @@ class MainActivity : AppCompatActivity() {
     private fun sendVirtualJoystick() {
         val targetId = primaryDisplayId
         if (targetId <= 0) {
-            addLocalLog("vKey $keyCode dropped: primaryDisplayId=$targetId")
+            addLocalLog("vStick dropped: primaryDisplayId=$targetId")
             return
         }
         if (!joystickPending.compareAndSet(false, true)) return

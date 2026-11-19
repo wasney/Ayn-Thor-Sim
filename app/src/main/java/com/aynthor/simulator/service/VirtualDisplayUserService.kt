@@ -327,7 +327,7 @@ class VirtualDisplayUserService(private val baseContext: Context) : IVirtualDisp
                 0
             )
             applyDisplayId(event, displayId)
-            injectEvent(event)
+            injectEvent(event, displayId)
         } catch (e: Throwable) {
             log("injectTouchEvent error", e)
         } finally {
@@ -381,7 +381,7 @@ class VirtualDisplayUserService(private val baseContext: Context) : IVirtualDisp
                 effectiveSource
             )
             applyDisplayId(event, displayId)
-            injectEvent(event)
+            injectEvent(event, displayId)
         } catch (e: Throwable) {
             log("injectKeyEvent error", e)
         }
@@ -438,7 +438,7 @@ class VirtualDisplayUserService(private val baseContext: Context) : IVirtualDisp
                 0
             )
             applyDisplayId(event, displayId)
-            injectEvent(event)
+            injectEvent(event, displayId)
         } catch (e: Throwable) {
             log("injectJoystickEvent error", e)
         } finally {
@@ -459,13 +459,13 @@ class VirtualDisplayUserService(private val baseContext: Context) : IVirtualDisp
     }
 
     @Synchronized
-    private fun injectEvent(event: InputEvent) {
+    private fun injectEvent(event: InputEvent, displayId: Int) {
         try {
             val ok = injectInputEventMethod?.invoke(inputManager, event, INJECT_INPUT_EVENT_MODE_ASYNC) as? Boolean
             if (event is KeyEvent) {
-                log("injectKey(${KeyEvent.keyCodeToString(event.keyCode)}, act=${event.action}, disp=${event.displayId}) -> $ok")
+                log("injectKey(${KeyEvent.keyCodeToString(event.keyCode)}, act=${event.action}, disp=$displayId) -> $ok")
             } else if (ok == false) {
-                log("injectMotion(src=0x${Integer.toHexString(event.source)}, disp=${event.displayId}) -> false")
+                log("injectMotion(src=0x${Integer.toHexString(event.source)}, disp=$displayId) -> false")
             }
         } catch (e: Throwable) {
             log("injectInputEvent invocation failed", e)
