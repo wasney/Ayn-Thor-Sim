@@ -32,7 +32,7 @@ class VirtualDisplayUserService(private val baseContext: Context) : IVirtualDisp
         private const val TAG = "AynThorUserService"
         private const val VIRTUAL_DISPLAY_FLAG_TRUSTED = 1 shl 10 // 1024
         private const val INJECT_INPUT_EVENT_MODE_ASYNC = 0
-        private const val MAX_LOG_LINES = 200
+        private const val MAX_LOG_LINES = 300
     }
 
     private val logLines = CopyOnWriteArrayList<String>()
@@ -427,6 +427,7 @@ class VirtualDisplayUserService(private val baseContext: Context) : IVirtualDisp
             )
             val coords = arrayOf(
                 MotionEvent.PointerCoords().apply {
+                    size = 1.0f
                     setAxisValue(MotionEvent.AXIS_X, axisX)
                     setAxisValue(MotionEvent.AXIS_Y, axisY)
                     setAxisValue(MotionEvent.AXIS_Z, axisZ)
@@ -437,6 +438,7 @@ class VirtualDisplayUserService(private val baseContext: Context) : IVirtualDisp
                     setAxisValue(MotionEvent.AXIS_HAT_Y, axisHatY)
                 }
             )
+            val devId = uinputGamepad.getDeviceId().takeIf { it > 0 } ?: 0
             event = MotionEvent.obtain(
                 downTime,
                 eventTime,
@@ -448,13 +450,23 @@ class VirtualDisplayUserService(private val baseContext: Context) : IVirtualDisp
                 0,
                 1.0f,
                 1.0f,
-                uinputGamepad.getDeviceId().takeIf { it > 0 } ?: 0,
+                devId,
                 0,
                 InputDevice.SOURCE_JOYSTICK,
                 0
             )
             applyDisplayId(event, displayId)
-            injectEvent(event, displayId)
+            val ok = injectEvent(event, displayId)
+            val nowMs = System.currentTimeMillis()
+            val isZero = axisX == 0f && axisY == 0f && axisZ == 0f && axisRz == 0f
+            if (ok != true || isZero || nowMs - lastStickLogTime >= 150L) {
+                lastStickLogTime = nowMs
+                log(
+                    "injectJoy(lx=%.2f, ly=%.2f, rx=%.2f, ry=%.2f, dev=%d, disp=%d) -> %s".format(
+                        Locale.US, axisX, axisY, axisZ, axisRz, devId, displayId, ok
+                    )
+                )
+            }
         } catch (e: Throwable) {
             log("injectJoystickEvent error", e)
         } finally {
@@ -475,16 +487,18 @@ class VirtualDisplayUserService(private val baseContext: Context) : IVirtualDisp
     }
 
     @Synchronized
-    private fun injectEvent(event: InputEvent, displayId: Int) {
-        try {
+    private fun injectEvent(event: InputEvent, displayId: Int): Boolean? {
+        return try {
             val ok = injectInputEventMethod?.invoke(inputManager, event, INJECT_INPUT_EVENT_MODE_ASYNC) as? Boolean
             if (event is KeyEvent) {
                 log("injectKey(${KeyEvent.keyCodeToString(event.keyCode)}, act=${event.action}, disp=$displayId) -> $ok")
-            } else if (ok == false) {
+            } else if (ok == false && (event.source and InputDevice.SOURCE_JOYSTICK) != InputDevice.SOURCE_JOYSTICK) {
                 log("injectMotion(src=0x${Integer.toHexString(event.source)}, disp=$displayId) -> false")
             }
+            ok
         } catch (e: Throwable) {
             log("injectInputEvent invocation failed", e)
+            null
         }
     }
 

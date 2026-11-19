@@ -110,11 +110,20 @@ class UinputGamepad(private val logger: (String) -> Unit) {
             w.newLine()
             w.flush()
 
-            Thread.sleep(300)
+            var resolvedId = -1
+            for (attempt in 0 until 10) {
+                Thread.sleep(100)
+                if (!proc.isAlive || hasError) break
+                resolvedId = resolveDeviceId()
+                if (resolvedId > 0) break
+            }
             if (proc.isAlive && !hasError) {
                 isActive = true
-                cachedDeviceId = resolveDeviceId()
-                logger("uinput Xbox 360 controller registered ($DEVICE_NAME, deviceId=$cachedDeviceId)")
+                cachedDeviceId = resolvedId
+                val dev = if (resolvedId > 0) InputDevice.getDevice(resolvedId) else null
+                val srcHex = dev?.let { "0x" + Integer.toHexString(it.sources) } ?: "none"
+                val ranges = dev?.motionRanges?.size ?: 0
+                logger("uinput Xbox 360 controller registered ($DEVICE_NAME, deviceId=$cachedDeviceId, src=$srcHex, ranges=$ranges)")
                 true
             } else {
                 logger("uinput registration failed (alive=${proc.isAlive}, hasError=$hasError); using InputManager fallback")
@@ -222,8 +231,12 @@ class UinputGamepad(private val logger: (String) -> Unit) {
 
     private fun resolveDeviceId(): Int {
         return try {
-            InputDevice.getDeviceIds().firstOrNull { id ->
+            val ids = InputDevice.getDeviceIds()
+            ids.firstOrNull { id ->
                 InputDevice.getDevice(id)?.name == DEVICE_NAME
+            } ?: ids.firstOrNull { id ->
+                val d = InputDevice.getDevice(id)
+                d != null && d.supportsSource(InputDevice.SOURCE_JOYSTICK)
             } ?: -1
         } catch (_: Throwable) {
             -1
