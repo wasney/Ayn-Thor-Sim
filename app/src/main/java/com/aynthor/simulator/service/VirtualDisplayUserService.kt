@@ -82,7 +82,7 @@ class VirtualDisplayUserService(private val baseContext: Context) : IVirtualDisp
     }
 
     private var topDisplay: VirtualDisplay? = null
-    private val uhidStick = UhidGamepad { msg -> log(msg) }
+    private val uinputGamepad = UinputGamepad { msg -> log(msg) }
     private var lastStickLogTime = 0L
     private var bottomDisplay: VirtualDisplay? = null
 
@@ -204,7 +204,7 @@ class VirtualDisplayUserService(private val baseContext: Context) : IVirtualDisp
             )
         )
 
-        uhidStick.open()
+        uinputGamepad.start()
         val topId = topDisplay?.display?.displayId ?: -1
         val bottomId = bottomDisplay?.display?.displayId ?: -1
         log("createDisplays result: topId=$topId, bottomId=$bottomId")
@@ -370,6 +370,9 @@ class VirtualDisplayUserService(private val baseContext: Context) : IVirtualDisp
         source: Int
     ) {
         if (displayId <= 0) return
+        if (uinputGamepad.isActive && uinputGamepad.sendKey(keyCode, action == KeyEvent.ACTION_DOWN)) {
+            return
+        }
         try {
             val effectiveSource = if (source != 0) source else (InputDevice.SOURCE_GAMEPAD or InputDevice.SOURCE_DPAD)
             val event = KeyEvent(
@@ -416,8 +419,8 @@ class VirtualDisplayUserService(private val baseContext: Context) : IVirtualDisp
         axisHatY: Float
     ) {
         if (displayId <= 0) return
-        if (uhidStick.isOpen) {
-            uhidStick.updateAxes(axisX, axisY, axisZ, axisRz)
+        if (uinputGamepad.isActive && uinputGamepad.sendAxes(axisX, axisY, axisZ, axisRz)) {
+            return
         }
         var event: MotionEvent? = null
         try {
@@ -482,14 +485,6 @@ class VirtualDisplayUserService(private val baseContext: Context) : IVirtualDisp
             val ok = injectInputEventMethod?.invoke(inputManager, event, INJECT_INPUT_EVENT_MODE_ASYNC) as? Boolean
             if (event is KeyEvent) {
                 log("injectKey(${KeyEvent.keyCodeToString(event.keyCode)}, act=${event.action}, disp=$displayId) -> $ok")
-            } else if (event is MotionEvent && (event.source and InputDevice.SOURCE_JOYSTICK) == InputDevice.SOURCE_JOYSTICK) {
-                val now = System.currentTimeMillis()
-                val x = event.getAxisValue(MotionEvent.AXIS_X)
-                val y = event.getAxisValue(MotionEvent.AXIS_Y)
-                if (ok == false || (x == 0f && y == 0f) || now - lastStickLogTime > 250L) {
-                    lastStickLogTime = now
-                    log("injectJoy(x=${"%.2f".format(x)}, y=${"%.2f".format(y)}, disp=$displayId) -> $ok")
-                }
             } else if (ok == false) {
                 log("injectMotion(src=0x${Integer.toHexString(event.source)}, disp=$displayId) -> false")
             }
@@ -521,7 +516,7 @@ class VirtualDisplayUserService(private val baseContext: Context) : IVirtualDisp
     }
 
     override fun releaseDisplays() {
-        uhidStick.close()
+        uinputGamepad.stop()
         try {
             topDisplay?.release()
         } catch (_: Throwable) {

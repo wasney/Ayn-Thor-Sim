@@ -105,7 +105,7 @@ class MainActivity : AppCompatActivity() {
             .daemon(false)
             .processNameSuffix("virtual_display_service")
             .debuggable(false)
-            .version(15)
+            .version(17)
     }
 
     private val serviceConnection = object : ServiceConnection {
@@ -475,7 +475,7 @@ class MainActivity : AppCompatActivity() {
         var found = false
         for (id in ids) {
             val dev = InputDevice.getDevice(id) ?: continue
-            if (dev.isVirtual || dev.name == "AYN Thor Virtual Stick") continue
+            if (dev.isVirtual || dev.name == "AYN Thor X360 Pad") continue
             val sources = dev.sources
             val isGamepad = (sources and InputDevice.SOURCE_GAMEPAD) == InputDevice.SOURCE_GAMEPAD ||
                 (sources and InputDevice.SOURCE_JOYSTICK) == InputDevice.SOURCE_JOYSTICK
@@ -614,6 +614,7 @@ class MainActivity : AppCompatActivity() {
             (event.source and InputDevice.SOURCE_DPAD) == InputDevice.SOURCE_DPAD ||
             (event.source and InputDevice.SOURCE_JOYSTICK) == InputDevice.SOURCE_JOYSTICK
 
+        if (event.device?.name == "AYN Thor X360 Pad") return false
         if (isGamepadKey && binding.launcherOverlay.visibility != View.VISIBLE) {
             val targetId = primaryDisplayId
             if (targetId > 0) {
@@ -639,7 +640,7 @@ class MainActivity : AppCompatActivity() {
         val isJoystick = (event.source and InputDevice.SOURCE_JOYSTICK) == InputDevice.SOURCE_JOYSTICK ||
             (event.source and InputDevice.SOURCE_GAMEPAD) == InputDevice.SOURCE_GAMEPAD
 
-        if (event.device?.name == "AYN Thor Virtual Stick") return false
+        if (event.device?.name == "AYN Thor X360 Pad") return false
         if (isJoystick && binding.launcherOverlay.visibility != View.VISIBLE) {
             val targetId = primaryDisplayId
             if (targetId > 0) {
