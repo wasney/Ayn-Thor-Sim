@@ -92,6 +92,7 @@ class VirtualDisplayUserService(private val baseContext: Context) : IVirtualDisp
     @Volatile private var cachedFocusDisplayId = -1
     @Volatile private var cachedFocusTaskId = -1
     private val focusExecutor = Executors.newSingleThreadExecutor()
+    private val injectExecutor = Executors.newFixedThreadPool(4)
     private var lastFocusTimeMs = 0L
     private var lastStickLogTime = 0L
     private var bottomDisplay: VirtualDisplay? = null
@@ -449,30 +450,41 @@ class VirtualDisplayUserService(private val baseContext: Context) : IVirtualDisp
         source: Int
     ) {
         if (displayId <= 0) return
-        try {
-            val effectiveSource = if (source != 0) source else (InputDevice.SOURCE_GAMEPAD or InputDevice.SOURCE_DPAD)
-            val devId = uinputGamepad.getDeviceId().takeIf { it > 0 } ?: -1
-            val isFaceButton = keyCode == KeyEvent.KEYCODE_BUTTON_A ||
-                keyCode == KeyEvent.KEYCODE_BUTTON_B ||
-                keyCode == KeyEvent.KEYCODE_BUTTON_X ||
-                keyCode == KeyEvent.KEYCODE_BUTTON_Y
-            val scanCode = if (isFaceButton) linuxScanCodeForKey(keyCode) else 0
-            val event = KeyEvent(
-                downTime,
-                eventTime,
-                action,
-                keyCode,
-                repeatCount,
-                metaState,
-                devId,
-                scanCode,
-                0,
-                effectiveSource
-            )
-            applyDisplayId(event, displayId)
-            injectEvent(event, displayId)
-        } catch (e: Throwable) {
-            log("injectKeyEvent error", e)
+        // Offload off the serialized oneway Binder thread onto a 4-thread pool so a 5s stall
+        // inside InputManagerService on one call can NEVER freeze subsequent button presses.
+        injectExecutor.execute {
+            try {
+                val now = android.os.SystemClock.uptimeMillis()
+                // Drop stale ACTION_DOWN events (>400ms old) to eliminate rapid-fire bursts;
+                // always deliver ACTION_UP so buttons can never get stuck.
+                if (action == KeyEvent.ACTION_DOWN && (now - eventTime) > 400L) {
+                    log("Dropped stale KEY_DOWN ${KeyEvent.keyCodeToString(keyCode)} (age=${now - eventTime}ms)")
+                    return@execute
+                }
+                val effectiveSource = if (source != 0) source else (InputDevice.SOURCE_GAMEPAD or InputDevice.SOURCE_DPAD)
+                val devId = uinputGamepad.getDeviceId().takeIf { it > 0 } ?: -1
+                val isFaceButton = keyCode == KeyEvent.KEYCODE_BUTTON_A ||
+                    keyCode == KeyEvent.KEYCODE_BUTTON_B ||
+                    keyCode == KeyEvent.KEYCODE_BUTTON_X ||
+                    keyCode == KeyEvent.KEYCODE_BUTTON_Y
+                val scanCode = if (isFaceButton) linuxScanCodeForKey(keyCode) else 0
+                val event = KeyEvent(
+                    downTime,
+                    now,
+                    action,
+                    keyCode,
+                    repeatCount,
+                    metaState,
+                    devId,
+                    scanCode,
+                    0,
+                    effectiveSource
+                )
+                applyDisplayId(event, displayId)
+                injectEvent(event, displayId)
+            } catch (e: Throwable) {
+                log("injectKeyEvent error", e)
+            }
         }
     }
 
@@ -828,6 +840,8 @@ class VirtualDisplayUserService(private val baseContext: Context) : IVirtualDisp
     }
 
     override fun destroy() {
+        try { focusExecutor.shutdownNow() } catch (_: Throwable) {}
+        try { injectExecutor.shutdownNow() } catch (_: Throwable) {}
         releaseDisplays()
         exitProcess(0)
     }
