@@ -38,6 +38,7 @@ import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.SurfaceHolder
 import android.view.View
+import android.view.ViewGroup
 import android.widget.FrameLayout
 import android.content.pm.ActivityInfo
 import android.text.TextUtils
