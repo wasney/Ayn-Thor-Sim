@@ -675,6 +675,21 @@ class VirtualDisplayUserService(private val baseContext: Context) : IVirtualDisp
         }
     }
 
+    override fun resizeBottomDisplay(width: Int, height: Int, dpi: Int): Boolean {
+        val display = bottomDisplay ?: return false
+        return try {
+            val safeW = width.coerceIn(640, 2560)
+            val safeH = height.coerceIn(640, 1440)
+            val safeDpi = dpi.coerceIn(160, 480)
+            display.resize(safeW, safeH, safeDpi)
+            log("Resized bottom display -> ${safeW}x${safeH} @${safeDpi}dpi")
+            true
+        } catch (e: Throwable) {
+            log("resizeBottomDisplay failed", e)
+            false
+        }
+    }
+
     override fun releaseDisplays() {
         invalidateFocusCache()
         lastUinputLx = 0f

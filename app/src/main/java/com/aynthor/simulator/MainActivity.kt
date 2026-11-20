@@ -144,7 +144,9 @@ class MainActivity : AppCompatActivity() {
     private var bottomSurfaceReady = false
 
     private var primaryDisplayId = -1    // 1920x1080
-    private var secondaryDisplayId = -1  // 1240x1080
+    private var secondaryDisplayId = -1
+    private var currentBottomVirtualWidth = BOTTOM_WIDTH
+    private var currentBottomVirtualHeight = BOTTOM_HEIGHT  // 1240x1080
     private var isSwapped = false
 
     private var allApps: List<AppInfo> = emptyList()
@@ -201,7 +203,7 @@ class MainActivity : AppCompatActivity() {
             .daemon(false)
             .processNameSuffix("virtual_display_service")
             .debuggable(false)
-            .version(57)
+            .version(58)
     }
 
     private val serviceConnection = object : ServiceConnection {
@@ -418,13 +420,19 @@ class MainActivity : AppCompatActivity() {
             topLp.endToEnd = ConstraintLayout.LayoutParams.PARENT_ID
             topLp.dimensionRatio = if (topRatio == "Fill") null else topRatio
 
-            // Stacked shoulders allow slimmer sidebars so the bottom virtual display gets more width
-            val sidebarMinDp = if (bottomRatio == "Fill") {
-                if (isStackedShoulders) 114 else 154
+            val touchVisible = manualTouchOverride ?: (!physicalControllerConnected && prefs.isTouchControlsEnabled())
+            // When touch controls are hidden (e.g., physical controller like GameSir connected),
+            // drop left/right sidebar margins to 0 so the bottom virtual display gets full width.
+            val sidebarClearancePx = if (!touchVisible) {
+                0
             } else {
-                if (isStackedShoulders) 96 else 132
+                val sidebarMinDp = if (bottomRatio == "Fill") {
+                    if (isStackedShoulders) 114 else 154
+                } else {
+                    if (isStackedShoulders) 96 else 132
+                }
+                dpPx(sidebarMinDp)
             }
-            val sidebarClearancePx = dpPx(sidebarMinDp)
 
             botLp.topToBottom = R.id.splitGuideline
             botLp.bottomToTop = ConstraintLayout.LayoutParams.UNSET
@@ -1024,6 +1032,8 @@ class MainActivity : AppCompatActivity() {
             manualTouchOverride = next
             prefs.setTouchControlsEnabled(next)
             applyTouchControlsVisibility(next)
+            applyDisplayLayout()
+            syncSurfaceMetadata()
         }
 
         binding.btnToggleLeftStick.setOnClickListener {
@@ -1155,9 +1165,14 @@ class MainActivity : AppCompatActivity() {
                 break
             }
         }
+        val stateChanged = (physicalControllerConnected != found)
         physicalControllerConnected = found
         val showTouch = manualTouchOverride ?: (!found && prefs.isTouchControlsEnabled())
         applyTouchControlsVisibility(showTouch)
+        if (stateChanged) {
+            applyDisplayLayout()
+            syncSurfaceMetadata()
+        }
     }
 
     private fun applyTouchControlsVisibility(visible: Boolean) {
@@ -1575,8 +1590,8 @@ class MainActivity : AppCompatActivity() {
         }
         binding.bottomSurfaceView.apply {
             targetDisplayId = secondaryDisplayId
-            virtualWidth = BOTTOM_WIDTH
-            virtualHeight = BOTTOM_HEIGHT
+            virtualWidth = currentBottomVirtualWidth
+            virtualHeight = currentBottomVirtualHeight
         }
 
         val topLp = binding.topSurfaceView.layoutParams as ConstraintLayout.LayoutParams
@@ -1615,6 +1630,45 @@ class MainActivity : AppCompatActivity() {
 
         binding.topSurfaceView.layoutParams = topLp
         binding.bottomSurfaceView.layoutParams = botLp
+        binding.bottomScreenContainer.post { syncBottomVirtualResolution() }
+    }
+
+    /**
+     * Keeps the secondary VirtualDisplay's native pixel resolution matched to the bottom container's
+     * true aspect ratio (1240x1080 for Thor, 1440x1080 for 4:3, 1080x1080 for 1:1, 1920x1080 for 16:9,
+     * or measured container aspect in Fill mode) so full-width layouts never stretch or distort.
+     */
+    private fun syncBottomVirtualResolution() {
+        if (secondaryDisplayId <= 0 || isSwapped) return
+        val cfgBotRatio = prefs.getBottomAspectRatio()
+        val targetH = BOTTOM_HEIGHT
+        val targetW = when (cfgBotRatio) {
+            "4:3" -> 1440
+            "1:1" -> 1080
+            "16:9" -> 1920
+            "Fill" -> {
+                val cw = binding.bottomScreenContainer.width
+                val ch = binding.bottomScreenContainer.height
+                if (cw > 0 && ch > 0) {
+                    val aspect = (cw.toFloat() / ch.toFloat()).coerceIn(0.8f, 2.35f)
+                    (((targetH * aspect).toInt() / 2) * 2).coerceIn(864, 2540)
+                } else {
+                    BOTTOM_WIDTH
+                }
+            }
+            else -> BOTTOM_WIDTH // "1240:1080" (Thor Default)
+        }
+        if (targetW == currentBottomVirtualWidth && targetH == currentBottomVirtualHeight) return
+        currentBottomVirtualWidth = targetW
+        currentBottomVirtualHeight = targetH
+        binding.bottomSurfaceView.apply {
+            virtualWidth = targetW
+            virtualHeight = targetH
+            holder.setFixedSize(targetW, targetH)
+        }
+        ioExecutor.execute {
+            userService?.resizeBottomDisplay(targetW, targetH, BOTTOM_DPI)
+        }
     }
 
     private fun updateReturnDualScreenVisibility() {

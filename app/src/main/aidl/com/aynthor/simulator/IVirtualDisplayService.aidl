@@ -73,4 +73,6 @@ interface IVirtualDisplayService {
     void registerClientDeathToken(IBinder token) = 13;
 
     String getPerformanceStats(int displayId) = 14;
+
+    boolean resizeBottomDisplay(int width, int height, int dpi) = 15;
 }
