@@ -201,7 +201,7 @@ class MainActivity : AppCompatActivity() {
             .daemon(false)
             .processNameSuffix("virtual_display_service")
             .debuggable(false)
-            .version(55)
+            .version(56)
     }
 
     private val serviceConnection = object : ServiceConnection {
@@ -257,6 +257,16 @@ class MainActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        val prevHandler = Thread.getDefaultUncaughtExceptionHandler()
+        Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
+            try {
+                val sw = java.io.StringWriter()
+                throwable.printStackTrace(java.io.PrintWriter(sw))
+                val ts = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.US).format(java.util.Date())
+                java.io.File(filesDir, "last_crash.txt").writeText("[$ts] Thread: ${thread.name}\n$sw")
+            } catch (_: Throwable) {}
+            prevHandler?.uncaughtException(thread, throwable)
+        }
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
@@ -459,6 +469,9 @@ class MainActivity : AppCompatActivity() {
             firstView: View,
             secondView: View
         ) {
+            // If either shoulder button has been custom-positioned in freeControlsLayer,
+            // leave both untouched so we never reparent a child that already has another parent.
+            if (firstView.parent !== container || secondView.parent !== container) return
             val containerLp = container.layoutParams as LinearLayout.LayoutParams
             if (stacked) {
                 container.orientation = LinearLayout.VERTICAL
@@ -1893,6 +1906,14 @@ class MainActivity : AppCompatActivity() {
                 appendLine("Model: ${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL} (SDK ${android.os.Build.VERSION.SDK_INT})")
                 appendLine("Shizuku alive: ${Shizuku.pingBinder()}, Bound: $isServiceBound")
                 appendLine("Primary(1920x1080) ID: $primaryDisplayId, Secondary(1240x1080) ID: $secondaryDisplayId, Swapped: $isSwapped")
+                val crashFile = java.io.File(filesDir, "last_crash.txt")
+                if (crashFile.exists()) {
+                    val crashText = try { crashFile.readText().take(3000) } catch (_: Throwable) { "" }
+                    if (crashText.isNotBlank()) {
+                        appendLine("\n=== Last Crash ===")
+                        appendLine(crashText)
+                    }
+                }
                 if (localLogs.isNotEmpty()) {
                     appendLine("\n=== App Log ===")
                     localLogs.forEach { appendLine(it) }
@@ -1908,6 +1929,10 @@ class MainActivity : AppCompatActivity() {
                         val cm = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                         cm.setPrimaryClip(ClipData.newPlainText("AynThorDebugLog", fullLog))
                         Toast.makeText(this, "Debug log copied", Toast.LENGTH_SHORT).show()
+                    }
+                    .setNeutralButton("Clear Crash") { _, _ ->
+                        try { java.io.File(filesDir, "last_crash.txt").delete() } catch (_: Throwable) {}
+                        Toast.makeText(this, "Saved crash log cleared", Toast.LENGTH_SHORT).show()
                     }
                     .setNegativeButton("Close", null)
                     .show()
