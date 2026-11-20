@@ -623,6 +623,103 @@ class SettingsSheetController(
         )
         contentContainer.addView(orientCard)
 
+        // Per-Orientation Screen Layout & Shoulder Button Layout cards (Landscape & Portrait independently)
+        fun buildOrientationLayoutCard(
+            title: String,
+            getLayout: () -> Int,
+            setLayout: (Int) -> Unit,
+            getShoulder: () -> Int,
+            setShoulder: (Int) -> Unit,
+            getStackedOrder: () -> Int,
+            setStackedOrder: (Int) -> Unit
+        ): LinearLayout {
+            val card = createFocusCard(title)
+
+            fun subLabel(textStr: String, topMarginDp: Int = 0): TextView = TextView(context).apply {
+                text = textStr
+                textSize = 11.5f
+                setTextColor(palette.textSecondary)
+                layoutParams = LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT
+                ).apply {
+                    topMargin = dp(topMarginDp)
+                    bottomMargin = dp(4)
+                }
+            }
+
+            card.addView(subLabel("Screen Layout"))
+            card.addView(
+                createSegmentedPillRow(
+                    options = listOf(
+                        "2-Layer" to SimulatorPrefs.LAYOUT_2_LAYER,
+                        "3-Layer" to SimulatorPrefs.LAYOUT_3_LAYER
+                    ),
+                    currentValue = getLayout()
+                ) { chosen ->
+                    setLayout(chosen)
+                    callbacks.onDisplaySettingsChanged(orientationChanged = false)
+                }
+            )
+
+            // Conditional Stacked Order container (shown only when Stacked shoulders is active)
+            val stackedOrderWrap = LinearLayout(context).apply {
+                orientation = LinearLayout.VERTICAL
+                visibility = if (getShoulder() == SimulatorPrefs.SHOULDER_STACKED) View.VISIBLE else View.GONE
+            }
+            stackedOrderWrap.addView(subLabel("Stacked Order", topMarginDp = 8))
+            stackedOrderWrap.addView(
+                createSegmentedPillRow(
+                    options = listOf(
+                        "L2 / L1" to SimulatorPrefs.STACKED_ORDER_2_OVER_1,
+                        "L1 / L2" to SimulatorPrefs.STACKED_ORDER_1_OVER_2
+                    ),
+                    currentValue = getStackedOrder()
+                ) { chosen ->
+                    setStackedOrder(chosen)
+                    callbacks.onDisplaySettingsChanged(orientationChanged = false)
+                }
+            )
+
+            card.addView(subLabel("Shoulders", topMarginDp = 8))
+            card.addView(
+                createSegmentedPillRow(
+                    options = listOf(
+                        "Adjacent" to SimulatorPrefs.SHOULDER_ADJACENT,
+                        "Stacked" to SimulatorPrefs.SHOULDER_STACKED
+                    ),
+                    currentValue = getShoulder()
+                ) { chosen ->
+                    setShoulder(chosen)
+                    stackedOrderWrap.visibility =
+                        if (chosen == SimulatorPrefs.SHOULDER_STACKED) View.VISIBLE else View.GONE
+                    callbacks.onDisplaySettingsChanged(orientationChanged = false)
+                }
+            )
+            card.addView(stackedOrderWrap)
+            return card
+        }
+
+        val landLayoutCard = buildOrientationLayoutCard(
+            title = "Landscape Mode",
+            getLayout = { prefs.getLandscapeLayoutMode() },
+            setLayout = { prefs.setLandscapeLayoutMode(it) },
+            getShoulder = { prefs.getLandscapeShoulderLayout() },
+            setShoulder = { prefs.setLandscapeShoulderLayout(it) },
+            getStackedOrder = { prefs.getLandscapeStackedOrder() },
+            setStackedOrder = { prefs.setLandscapeStackedOrder(it) }
+        )
+        val portLayoutCard = buildOrientationLayoutCard(
+            title = "Portrait Mode",
+            getLayout = { prefs.getPortraitLayoutMode() },
+            setLayout = { prefs.setPortraitLayoutMode(it) },
+            getShoulder = { prefs.getPortraitShoulderLayout() },
+            setShoulder = { prefs.setPortraitShoulderLayout(it) },
+            getStackedOrder = { prefs.getPortraitStackedOrder() },
+            setStackedOrder = { prefs.setPortraitStackedOrder(it) }
+        )
+        addResponsiveCardPair(landLayoutCard, portLayoutCard)
+
         // Card 2: Screen Split slider + quick preset chips (live preview on top game!)
         val splitCard = createFocusCard("Screen Split")
         val curSplitPct = (prefs.getSplitPercent() * 100f).roundToInt().coerceIn(45, 62)
@@ -731,7 +828,7 @@ class SettingsSheetController(
         val bottomCard = createFocusCard("Bottom Aspect Ratio")
         bottomCard.addView(
             createSegmentedPillRow(
-                options = listOf("Thor" to "1240:1080", "4:3" to "4:3", "1:1" to "1:1", "16:9" to "16:9"),
+                options = listOf("Thor" to "1240:1080", "4:3" to "4:3", "1:1" to "1:1", "16:9" to "16:9", "Fill" to "Fill"),
                 currentValue = prefs.getBottomAspectRatio()
             ) { chosen ->
                 prefs.setBottomAspectRatio(chosen)

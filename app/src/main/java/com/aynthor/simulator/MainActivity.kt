@@ -198,7 +198,7 @@ class MainActivity : AppCompatActivity() {
             .daemon(false)
             .processNameSuffix("virtual_display_service")
             .debuggable(false)
-            .version(52)
+            .version(53)
     }
 
     private val serviceConnection = object : ServiceConnection {
@@ -341,12 +341,21 @@ class MainActivity : AppCompatActivity() {
         val topRatio = prefs.getTopAspectRatio()
         val bottomRatio = prefs.getBottomAspectRatio()
 
+        val layoutMode = if (isPortrait) prefs.getPortraitLayoutMode() else prefs.getLandscapeLayoutMode()
+        val shoulderLayout = if (isPortrait) prefs.getPortraitShoulderLayout() else prefs.getLandscapeShoulderLayout()
+        val stackedOrder = if (isPortrait) prefs.getPortraitStackedOrder() else prefs.getLandscapeStackedOrder()
+        val isThreeLayer = (layoutMode == SimulatorPrefs.LAYOUT_3_LAYER)
+        val isStackedShoulders = (shoulderLayout == SimulatorPrefs.SHOULDER_STACKED)
+
         val topLp = binding.topScreenContainer.layoutParams as ConstraintLayout.LayoutParams
         val botLp = binding.bottomScreenContainer.layoutParams as ConstraintLayout.LayoutParams
         val leftLp = binding.leftSidebar.layoutParams as ConstraintLayout.LayoutParams
         val rightLp = binding.rightSidebar.layoutParams as ConstraintLayout.LayoutParams
 
-        if (isPortrait) {
+        val density = resources.displayMetrics.density
+        fun dpPx(v: Int): Int = (v * density).toInt()
+
+        if (isThreeLayer) {
             val touchVisible = manualTouchOverride ?: (!physicalControllerConnected && prefs.isTouchControlsEnabled())
             val controlsTop = if (touchVisible) 0.72f else 0.90f
             binding.portraitControlsGuideline.setGuidelinePercent(controlsTop)
@@ -364,6 +373,8 @@ class MainActivity : AppCompatActivity() {
             botLp.bottomToBottom = ConstraintLayout.LayoutParams.UNSET
             botLp.startToStart = ConstraintLayout.LayoutParams.PARENT_ID
             botLp.endToEnd = ConstraintLayout.LayoutParams.PARENT_ID
+            botLp.marginStart = 0
+            botLp.marginEnd = 0
             botLp.dimensionRatio = if (bottomRatio == "Fill") null else bottomRatio
 
             leftLp.topToBottom = R.id.portraitControlsGuideline
@@ -378,6 +389,7 @@ class MainActivity : AppCompatActivity() {
             rightLp.startToStart = ConstraintLayout.LayoutParams.UNSET
             rightLp.endToEnd = ConstraintLayout.LayoutParams.PARENT_ID
         } else {
+            // 2-Layer Layout (Top screen above split; Bottom screen flanked by left/right sidebars)
             binding.splitGuideline.setGuidelinePercent(splitPct)
 
             topLp.topToTop = ConstraintLayout.LayoutParams.PARENT_ID
@@ -387,11 +399,21 @@ class MainActivity : AppCompatActivity() {
             topLp.endToEnd = ConstraintLayout.LayoutParams.PARENT_ID
             topLp.dimensionRatio = if (topRatio == "Fill") null else topRatio
 
+            // Stacked shoulders allow slimmer sidebars so the bottom virtual display gets more width
+            val sidebarMinDp = if (bottomRatio == "Fill") {
+                if (isStackedShoulders) 114 else 154
+            } else {
+                if (isStackedShoulders) 96 else 132
+            }
+            val sidebarClearancePx = dpPx(sidebarMinDp)
+
             botLp.topToBottom = R.id.splitGuideline
             botLp.bottomToTop = ConstraintLayout.LayoutParams.UNSET
             botLp.bottomToBottom = ConstraintLayout.LayoutParams.PARENT_ID
             botLp.startToStart = ConstraintLayout.LayoutParams.PARENT_ID
             botLp.endToEnd = ConstraintLayout.LayoutParams.PARENT_ID
+            botLp.marginStart = sidebarClearancePx
+            botLp.marginEnd = sidebarClearancePx
             botLp.dimensionRatio = if (bottomRatio == "Fill") null else bottomRatio
 
             leftLp.topToBottom = R.id.splitGuideline
@@ -411,6 +433,70 @@ class MainActivity : AppCompatActivity() {
         binding.bottomScreenContainer.layoutParams = botLp
         binding.leftSidebar.layoutParams = leftLp
         binding.rightSidebar.layoutParams = rightLp
+
+        applyShoulderButtonLayout(isStackedShoulders, stackedOrder)
+    }
+
+    private fun applyShoulderButtonLayout(stacked: Boolean, stackedOrder: Int) {
+        val density = resources.displayMetrics.density
+        fun dpPx(v: Int): Int = (v * density).toInt()
+        val gapPx = dpPx(4)
+
+        fun configurePair(
+            container: LinearLayout,
+            firstView: View,
+            secondView: View
+        ) {
+            val containerLp = container.layoutParams as LinearLayout.LayoutParams
+            if (stacked) {
+                container.orientation = LinearLayout.VERTICAL
+                containerLp.height = dpPx(68)
+            } else {
+                container.orientation = LinearLayout.HORIZONTAL
+                containerLp.height = dpPx(36)
+            }
+            container.layoutParams = containerLp
+
+            // Reorder children only when needed so all touch listeners stay intact
+            if (container.childCount != 2 ||
+                container.getChildAt(0) !== firstView ||
+                container.getChildAt(1) !== secondView
+            ) {
+                container.removeAllViews()
+                container.addView(firstView)
+                container.addView(secondView)
+            }
+
+            if (stacked) {
+                firstView.layoutParams = LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f
+                ).apply { bottomMargin = gapPx }
+                secondView.layoutParams = LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f
+                )
+            } else {
+                firstView.layoutParams = LinearLayout.LayoutParams(
+                    0, ViewGroup.LayoutParams.MATCH_PARENT, 1f
+                ).apply { marginEnd = gapPx }
+                secondView.layoutParams = LinearLayout.LayoutParams(
+                    0, ViewGroup.LayoutParams.MATCH_PARENT, 1f
+                )
+            }
+        }
+
+        if (stacked) {
+            if (stackedOrder == SimulatorPrefs.STACKED_ORDER_1_OVER_2) {
+                configurePair(binding.leftShoulderContainer, binding.btnL1, binding.btnL2)
+                configurePair(binding.rightShoulderContainer, binding.btnR1, binding.btnR2)
+            } else {
+                configurePair(binding.leftShoulderContainer, binding.btnL2, binding.btnL1)
+                configurePair(binding.rightShoulderContainer, binding.btnR2, binding.btnR1)
+            }
+        } else {
+            // Original adjacent order: [L2 | L1] on left, [R1 | R2] on right
+            configurePair(binding.leftShoulderContainer, binding.btnL2, binding.btnL1)
+            configurePair(binding.rightShoulderContainer, binding.btnR1, binding.btnR2)
+        }
     }
 
     /**

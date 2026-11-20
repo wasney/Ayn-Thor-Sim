@@ -31,6 +31,15 @@ class SimulatorPrefs(context: Context) {
         const val ORIENTATION_AUTO = 2
         const val ORIENTATION_SYSTEM = 3
 
+        const val LAYOUT_2_LAYER = 0
+        const val LAYOUT_3_LAYER = 1
+
+        const val SHOULDER_ADJACENT = 0
+        const val SHOULDER_STACKED = 1
+
+        const val STACKED_ORDER_2_OVER_1 = 0 // L2 over L1, R2 over R1
+        const val STACKED_ORDER_1_OVER_2 = 1 // L1 over L2, R1 over R2
+
         private const val KEY_HIDDEN_PACKAGES = "hidden_packages"
         private const val KEY_SPLIT_PERCENT = "split_percent"
         private const val KEY_TOP_ASPECT_RATIO = "top_aspect_ratio"
@@ -50,6 +59,12 @@ class SimulatorPrefs(context: Context) {
         private const val KEY_USE_KERNEL_GAMEPAD = "use_kernel_gamepad"
         private const val KEY_DPAD_FOUR_WAY = "dpad_four_way"
         private const val KEY_ONBOARDING_COMPLETED = "onboarding_completed"
+        private const val KEY_LANDSCAPE_LAYOUT_MODE = "landscape_layout_mode"
+        private const val KEY_PORTRAIT_LAYOUT_MODE = "portrait_layout_mode"
+        private const val KEY_LANDSCAPE_SHOULDER_LAYOUT = "landscape_shoulder_layout"
+        private const val KEY_PORTRAIT_SHOULDER_LAYOUT = "portrait_shoulder_layout"
+        private const val KEY_LANDSCAPE_STACKED_ORDER = "landscape_stacked_order"
+        private const val KEY_PORTRAIT_STACKED_ORDER = "portrait_stacked_order"
         private const val KEY_PROFILE_PACKAGES = "app_profile_packages"
         private const val PREFIX_APP_PROFILE = "app_profile_"
 
@@ -481,5 +496,41 @@ class SimulatorPrefs(context: Context) {
 
     fun setOnboardingCompleted(completed: Boolean) {
         prefs.edit().putBoolean(KEY_ONBOARDING_COMPLETED, completed).apply()
+    }
+
+    fun getLandscapeLayoutMode(): Int = prefs.getInt(KEY_LANDSCAPE_LAYOUT_MODE, LAYOUT_2_LAYER)
+
+    fun setLandscapeLayoutMode(mode: Int) {
+        prefs.edit().putInt(KEY_LANDSCAPE_LAYOUT_MODE, mode).apply()
+    }
+
+    fun getPortraitLayoutMode(): Int = prefs.getInt(KEY_PORTRAIT_LAYOUT_MODE, LAYOUT_2_LAYER)
+
+    fun setPortraitLayoutMode(mode: Int) {
+        prefs.edit().putInt(KEY_PORTRAIT_LAYOUT_MODE, mode).apply()
+    }
+
+    fun getLandscapeShoulderLayout(): Int = prefs.getInt(KEY_LANDSCAPE_SHOULDER_LAYOUT, SHOULDER_ADJACENT)
+
+    fun setLandscapeShoulderLayout(mode: Int) {
+        prefs.edit().putInt(KEY_LANDSCAPE_SHOULDER_LAYOUT, mode).apply()
+    }
+
+    fun getPortraitShoulderLayout(): Int = prefs.getInt(KEY_PORTRAIT_SHOULDER_LAYOUT, SHOULDER_ADJACENT)
+
+    fun setPortraitShoulderLayout(mode: Int) {
+        prefs.edit().putInt(KEY_PORTRAIT_SHOULDER_LAYOUT, mode).apply()
+    }
+
+    fun getLandscapeStackedOrder(): Int = prefs.getInt(KEY_LANDSCAPE_STACKED_ORDER, STACKED_ORDER_2_OVER_1)
+
+    fun setLandscapeStackedOrder(order: Int) {
+        prefs.edit().putInt(KEY_LANDSCAPE_STACKED_ORDER, order).apply()
+    }
+
+    fun getPortraitStackedOrder(): Int = prefs.getInt(KEY_PORTRAIT_STACKED_ORDER, STACKED_ORDER_2_OVER_1)
+
+    fun setPortraitStackedOrder(order: Int) {
+        prefs.edit().putInt(KEY_PORTRAIT_STACKED_ORDER, order).apply()
     }
 }

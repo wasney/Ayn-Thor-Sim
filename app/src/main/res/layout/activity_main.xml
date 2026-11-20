@@ -867,6 +867,7 @@
             android:orientation="vertical">
 
             <LinearLayout
+                android:id="@+id/leftShoulderContainer"
                 android:layout_width="match_parent"
                 android:layout_height="36dp"
                 android:gravity="center"
@@ -1011,6 +1012,7 @@
             android:orientation="vertical">
 
             <LinearLayout
+                android:id="@+id/rightShoulderContainer"
                 android:layout_width="match_parent"
                 android:layout_height="36dp"
                 android:gravity="center"
