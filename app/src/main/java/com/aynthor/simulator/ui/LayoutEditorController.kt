@@ -493,15 +493,24 @@ class LayoutEditorController(
         callbacks.onEditModeChanged(false)
     }
 
+    private fun normalizeBaseSize(id: ItemId, w: Int, h: Int): Pair<Int, Int> {
+        val isSquareControl = (id == ItemId.DPAD || id == ItemId.LSTICK || id == ItemId.ABXY || id == ItemId.RSTICK)
+        if (isSquareControl) {
+            val side = minOf(w, h).coerceAtLeast(dp(84))
+            return side to side
+        }
+        return w to h
+    }
+
     private fun captureCurrentBaseSizes() {
         for ((id, view) in items) {
             if (view.parent === freeControlsLayer) {
                 val lp = view.layoutParams
                 if (lp.width > 0 && lp.height > 0) {
-                    cachedBaseSizes[id] = lp.width to lp.height
+                    cachedBaseSizes[id] = normalizeBaseSize(id, lp.width, lp.height)
                 }
             } else if (view.width > 0 && view.height > 0) {
-                cachedBaseSizes[id] = view.width to view.height
+                cachedBaseSizes[id] = normalizeBaseSize(id, view.width, view.height)
             } else if (!cachedBaseSizes.containsKey(id)) {
                 cachedBaseSizes[id] = fallbackBaseSize(id)
             }
@@ -537,7 +546,7 @@ class LayoutEditorController(
         val rootW = freeControlsLayer.width.coerceAtLeast(1)
         val rootH = freeControlsLayer.height.coerceAtLeast(1)
         val box = measureItemBoxInRoot(id, view)
-        cachedBaseSizes[id] = box.width to box.height
+        cachedBaseSizes[id] = normalizeBaseSize(id, box.width, box.height)
 
         val initScale = if (!id.isToolbar &&
             (id == ItemId.DPAD || id == ItemId.LSTICK || id == ItemId.ABXY || id == ItemId.RSTICK)
@@ -565,8 +574,9 @@ class LayoutEditorController(
         rootH: Int,
         globalAlpha: Float
     ) {
-        val (baseW, baseH) = cachedBaseSizes[id]
+        val rawSize = cachedBaseSizes[id]
             ?: (if (view.width > 0 && view.height > 0) (view.width to view.height) else fallbackBaseSize(id))
+        val (baseW, baseH) = normalizeBaseSize(id, rawSize.first, rawSize.second)
         cachedBaseSizes[id] = baseW to baseH
 
         if (view.parent !== freeControlsLayer) {
@@ -667,8 +677,9 @@ class LayoutEditorController(
         for ((id, view) in items) {
             val proxy = proxyBoxes[id] ?: continue
             val m = measureItemBoxInRoot(id, view)
-            val visW = (m.width * view.scaleX).roundToInt().coerceAtLeast(dp(36))
-            val visH = (m.height * view.scaleY).roundToInt().coerceAtLeast(dp(32))
+            val (normW, normH) = normalizeBaseSize(id, m.width, m.height)
+            val visW = (normW * view.scaleX).roundToInt().coerceAtLeast(dp(36))
+            val visH = (normH * view.scaleY).roundToInt().coerceAtLeast(dp(32))
 
             val lp = proxy.layoutParams as FrameLayout.LayoutParams
             if (lp.width != visW || lp.height != visH) {

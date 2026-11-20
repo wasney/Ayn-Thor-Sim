@@ -93,11 +93,19 @@ class VirtualDpadView @JvmOverloads constructor(
     override fun onTouchEvent(event: MotionEvent): Boolean {
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN, MotionEvent.ACTION_POINTER_DOWN -> {
+                val idx = event.actionIndex
+                val tx = event.getX(idx)
+                val ty = event.getY(idx)
+                val maxHitR = minOf(width, height) * 0.52f
+                if (event.actionMasked == MotionEvent.ACTION_DOWN &&
+                    hypot(tx - width / 2f, ty - height / 2f) > maxHitR
+                ) {
+                    return false
+                }
                 parent?.requestDisallowInterceptTouchEvent(true)
                 if (activePointerId == MotionEvent.INVALID_POINTER_ID) {
-                    val idx = event.actionIndex
                     activePointerId = event.getPointerId(idx)
-                    updateDirection(event.getX(idx), event.getY(idx))
+                    updateDirection(tx, ty)
                 }
             }
             MotionEvent.ACTION_MOVE -> {
@@ -261,14 +269,22 @@ class VirtualThumbstickView @JvmOverloads constructor(
 
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN, MotionEvent.ACTION_POINTER_DOWN -> {
+                val idx = event.actionIndex
+                val tx = event.getX(idx)
+                val ty = event.getY(idx)
+                val outerR = maxOf(minOf(width, height) * 0.40f, 52f)
+                if (event.actionMasked == MotionEvent.ACTION_DOWN &&
+                    hypot(tx - width / 2f, ty - height / 2f) > outerR * 1.12f
+                ) {
+                    return false
+                }
                 parent?.requestDisallowInterceptTouchEvent(true)
                 if (activePointerId == MotionEvent.INVALID_POINTER_ID) {
-                    val idx = event.actionIndex
                     activePointerId = event.getPointerId(idx)
                     // Locked-in-place center
                     anchorX = width / 2f
                     anchorY = height / 2f
-                    updateStick(event.getX(idx), event.getY(idx), maxDist)
+                    updateStick(tx, ty, maxDist)
                 }
             }
             MotionEvent.ACTION_MOVE -> {
@@ -440,10 +456,13 @@ class VirtualFaceButtonsView @JvmOverloads constructor(
     override fun onTouchEvent(event: MotionEvent): Boolean {
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN, MotionEvent.ACTION_POINTER_DOWN -> {
-                parent?.requestDisallowInterceptTouchEvent(true)
                 val idx = event.actionIndex
                 val pid = event.getPointerId(idx)
-                val hit = findButtonAt(event.getX(idx), event.getY(idx), 1.85f)
+                val hit = findButtonAt(event.getX(idx), event.getY(idx), 1.45f)
+                if (hit == null && event.actionMasked == MotionEvent.ACTION_DOWN) {
+                    return false
+                }
+                parent?.requestDisallowInterceptTouchEvent(true)
                 if (hit != null) {
                     pointerToKey[pid] = hit.keyCode
                     recomputeActiveKeys()
