@@ -203,7 +203,7 @@ class MainActivity : AppCompatActivity() {
             .daemon(false)
             .processNameSuffix("virtual_display_service")
             .debuggable(false)
-            .version(58)
+            .version(59)
     }
 
     private val serviceConnection = object : ServiceConnection {
@@ -356,11 +356,28 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    /**
+     * When a physical controller (e.g. GameSir) is connected and touch controls are hidden:
+     * - Automatically locks Bottom Aspect Ratio to "1240:1080" (Thor) for dual-screen emulators
+     *   (SeedlessDS, DraStic, Azahar, etc.) so their Presentation never stretches.
+     * - Automatically expands Bottom Aspect Ratio to "Fill" for standard top games + bottom apps
+     *   (browsers, YouTube, guides, Bottom Home) for crisp full-width rendering.
+     * When using on-screen touch controls, always respects the user's saved Bottom Aspect Ratio.
+     */
+    private fun effectiveBottomAspectRatio(): String {
+        val touchVisible = manualTouchOverride ?: (!physicalControllerConnected && prefs.isTouchControlsEnabled())
+        if (!touchVisible && physicalControllerConnected) {
+            val isDualScreenActive = prefs.isDualScreenApp(activeTopPackage) && !hasBottomAppRunning
+            return if (isDualScreenActive) "1240:1080" else "Fill"
+        }
+        return prefs.getBottomAspectRatio()
+    }
+
     private fun applyDisplayLayout() {
         val isPortrait = resources.configuration.orientation == Configuration.ORIENTATION_PORTRAIT
         val splitPct = activeProfileSplit ?: prefs.getSplitPercent()
         val topRatio = prefs.getTopAspectRatio()
-        val bottomRatio = prefs.getBottomAspectRatio()
+        val bottomRatio = effectiveBottomAspectRatio()
 
         val layoutMode = if (isPortrait) prefs.getPortraitLayoutMode() else prefs.getLandscapeLayoutMode()
         val shoulderLayout = if (isPortrait) prefs.getPortraitShoulderLayout() else prefs.getLandscapeShoulderLayout()
@@ -1614,7 +1631,7 @@ class MainActivity : AppCompatActivity() {
         } else {
             // Normal: match user's configured top & bottom aspect ratios cleanly inside each container
             val cfgTopRatio = prefs.getTopAspectRatio()
-            val cfgBotRatio = prefs.getBottomAspectRatio()
+            val cfgBotRatio = effectiveBottomAspectRatio()
             topLp.topToTop = R.id.topScreenContainer
             topLp.bottomToBottom = R.id.topScreenContainer
             topLp.startToStart = R.id.topScreenContainer
@@ -1640,7 +1657,7 @@ class MainActivity : AppCompatActivity() {
      */
     private fun syncBottomVirtualResolution() {
         if (secondaryDisplayId <= 0 || isSwapped) return
-        val cfgBotRatio = prefs.getBottomAspectRatio()
+        val cfgBotRatio = effectiveBottomAspectRatio()
         val targetH = BOTTOM_HEIGHT
         val targetW = when (cfgBotRatio) {
             "4:3" -> 1440
@@ -1858,6 +1875,8 @@ class MainActivity : AppCompatActivity() {
             lastBottomPackage = app.packageName
             hasBottomAppRunning = true
             binding.bottomHomeOverlay.visibility = View.GONE
+            applyDisplayLayout()
+            syncSurfaceMetadata()
         }
         updateBottomActionButton()
         refreshLauncherList()
