@@ -52,6 +52,9 @@ class SettingsSheetController(
         fun onImportBackupRequested()
         fun onReplayOnboardingRequested()
         fun onEditTouchLayoutRequested()
+        fun onOpenDebugLogRequested()
+        fun onCheckForUpdatesRequested()
+        fun onOpenUrlRequested(url: String)
         fun onVisibilityChanged(visible: Boolean)
     }
 
@@ -60,7 +63,8 @@ class SettingsSheetController(
         HOME("Home", "Home & Control Center", R.drawable.ic_settings_home),
         GAMEPAD("Gamepad", "Virtual Gamepad", R.drawable.ic_settings_gamepad),
         THEME("Theme", "App Drawers & Theme", R.drawable.ic_settings_theme),
-        BACKUP("Backup", "Backup & Restore", R.drawable.ic_settings_backup)
+        BACKUP("Backup", "Backup & Restore", R.drawable.ic_settings_backup),
+        ABOUT("About", "About & Updates", R.drawable.ic_settings_about)
     }
 
     private data class Palette(
@@ -598,6 +602,7 @@ class SettingsSheetController(
             Tab.GAMEPAD -> buildGamepadTab()
             Tab.THEME -> buildThemeTab()
             Tab.BACKUP -> buildBackupTab()
+            Tab.ABOUT -> buildAboutTab()
         }
     }
 
@@ -1139,6 +1144,123 @@ class SettingsSheetController(
             }
         )
         contentContainer.addView(guideCard)
+    }
+
+    // -------------------------------------------------------------------------
+    // Tab 6: About & Updates
+    // -------------------------------------------------------------------------
+    private fun buildAboutTab() {
+        val versionName = try {
+            context.packageManager.getPackageInfo(context.packageName, 0).versionName ?: "2.9.0-pre"
+        } catch (_: Throwable) {
+            "2.9.0-pre"
+        }
+
+        val updatesCard = createFocusCard("Version & Updates")
+        val versionRow = LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            ).apply { bottomMargin = dp(8) }
+        }
+        versionRow.addView(TextView(context).apply {
+            text = "DroiDS (Official Prerelease)"
+            textSize = 13.5f
+            setTypeface(null, Typeface.BOLD)
+            setTextColor(palette.textPrimary)
+            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+        })
+        versionRow.addView(createValueBadge("v$versionName"))
+        updatesCard.addView(versionRow)
+
+        updatesCard.addView(
+            createSwitchRow(
+                title = "Auto-Check for Updates",
+                subtitle = "Check GitHub Releases automatically on launch",
+                checked = prefs.isAutoCheckUpdatesEnabled()
+            ) { enabled ->
+                prefs.setAutoCheckUpdatesEnabled(enabled)
+            }
+        )
+        updatesCard.addView(View(context).apply {
+            layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(8))
+        })
+        updatesCard.addView(
+            createActionRowButton(
+                title = "Check for Updates Now",
+                subtitle = "Download and install the latest build from GitHub",
+                iconRes = R.drawable.ic_settings_update,
+                primary = true
+            ) {
+                callbacks.onCheckForUpdatesRequested()
+            }
+        )
+        contentContainer.addView(updatesCard)
+
+        val diagCard = createFocusCard("Diagnostics & Logs")
+        diagCard.addView(
+            createActionRowButton(
+                title = "Debug & Crash Logs",
+                subtitle = "Inspect Shizuku status, display IDs, and recent crash logs",
+                iconRes = R.drawable.ic_settings_logs,
+                primary = false
+            ) {
+                callbacks.onOpenDebugLogRequested()
+            }
+        )
+        contentContainer.addView(diagCard)
+
+        val linksCard = createFocusCard("Links & Credits")
+        linksCard.addView(
+            createActionRowButton(
+                title = "DroiDS on GitHub",
+                subtitle = "github.com/wasney/DroidDS — source, releases & issues",
+                iconRes = R.drawable.ic_settings_link,
+                primary = false
+            ) {
+                callbacks.onOpenUrlRequested("https://github.com/wasney/DroidDS")
+            }
+        )
+        linksCard.addView(View(context).apply {
+            layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(10))
+        })
+        linksCard.addView(
+            createActionRowButton(
+                title = "Shizuku",
+                subtitle = "shizuku.rikka.app — no-root privileged API",
+                iconRes = R.drawable.ic_settings_link,
+                primary = false
+            ) {
+                callbacks.onOpenUrlRequested("https://shizuku.rikka.app/")
+            }
+        )
+        linksCard.addView(View(context).apply {
+            layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(10))
+        })
+        linksCard.addView(createHairlineDivider())
+        linksCard.addView(TextView(context).apply {
+            text = "Credits: Created by wasney with Gemini"
+            textSize = 13f
+            setTypeface(null, Typeface.BOLD)
+            setTextColor(palette.textPrimary)
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            ).apply { topMargin = dp(8) }
+        })
+        linksCard.addView(TextView(context).apply {
+            text = "Built for foldable and large-screen Android gamers who want dual-screen handheld support without root."
+            textSize = 12f
+            setTextColor(palette.textSecondary)
+            setLineSpacing(dp(2).toFloat(), 1f)
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            ).apply { topMargin = dp(4) }
+        })
+        contentContainer.addView(linksCard)
     }
 
     // -------------------------------------------------------------------------

@@ -59,6 +59,8 @@ class SimulatorPrefs(context: Context) {
         private const val KEY_USE_KERNEL_GAMEPAD = "use_kernel_gamepad"
         private const val KEY_DPAD_FOUR_WAY = "dpad_four_way"
         private const val KEY_ONBOARDING_COMPLETED = "onboarding_completed"
+        private const val KEY_AUTO_CHECK_UPDATES = "auto_check_updates"
+        private const val KEY_SKIPPED_UPDATE_TAG = "skipped_update_tag"
         private const val KEY_LANDSCAPE_LAYOUT_MODE = "landscape_layout_mode"
         private const val KEY_PORTRAIT_LAYOUT_MODE = "portrait_layout_mode"
         private const val KEY_LANDSCAPE_SHOULDER_LAYOUT = "landscape_shoulder_layout"
@@ -506,6 +508,20 @@ class SimulatorPrefs(context: Context) {
 
     fun setOnboardingCompleted(completed: Boolean) {
         prefs.edit().putBoolean(KEY_ONBOARDING_COMPLETED, completed).apply()
+    }
+
+    fun isAutoCheckUpdatesEnabled(): Boolean = prefs.getBoolean(KEY_AUTO_CHECK_UPDATES, true)
+
+    fun setAutoCheckUpdatesEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_AUTO_CHECK_UPDATES, enabled).apply()
+    }
+
+    fun getSkippedUpdateTag(): String? = prefs.getString(KEY_SKIPPED_UPDATE_TAG, null)
+
+    fun setSkippedUpdateTag(tag: String?) {
+        val ed = prefs.edit()
+        if (tag.isNullOrBlank()) ed.remove(KEY_SKIPPED_UPDATE_TAG) else ed.putString(KEY_SKIPPED_UPDATE_TAG, tag)
+        ed.apply()
     }
 
     fun getLandscapeLayoutMode(): Int = prefs.getInt(KEY_LANDSCAPE_LAYOUT_MODE, LAYOUT_2_LAYER)

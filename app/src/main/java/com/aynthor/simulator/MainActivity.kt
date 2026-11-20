@@ -63,6 +63,7 @@ import com.aynthor.simulator.launcher.AppRepository
 import androidx.activity.OnBackPressedCallback
 import com.aynthor.simulator.prefs.SimulatorPrefs
 import com.aynthor.simulator.ui.SettingsSheetController
+import com.aynthor.simulator.update.AppUpdater
 import com.aynthor.simulator.ui.OnboardingOverlayController
 import com.aynthor.simulator.ui.LayoutEditorController
 import com.aynthor.simulator.service.VirtualDisplayUserService
@@ -84,6 +85,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var binding: ActivityMainBinding
     private lateinit var prefs: SimulatorPrefs
     private lateinit var settingsSheet: SettingsSheetController
+    private lateinit var appUpdater: AppUpdater
     private lateinit var onboardingOverlay: OnboardingOverlayController
     private lateinit var layoutEditor: LayoutEditorController
     private lateinit var inputManager: InputManager
@@ -203,7 +205,7 @@ class MainActivity : AppCompatActivity() {
             .daemon(false)
             .processNameSuffix("virtual_display_service")
             .debuggable(false)
-            .version(59)
+            .version(60)
     }
 
     private val serviceConnection = object : ServiceConnection {
@@ -328,9 +330,17 @@ class MainActivity : AppCompatActivity() {
         Shizuku.addRequestPermissionResultListener(permissionResultListener)
         inputManager.registerInputDeviceListener(inputDeviceListener, null)
 
+        appUpdater = AppUpdater(this, prefs, ioExecutor)
+
         if (!prefs.isOnboardingCompleted()) {
             onboardingOverlay.refreshTheme(isLightThemeActive)
             onboardingOverlay.showWizard(startStep = 0)
+        } else if (prefs.isAutoCheckUpdatesEnabled()) {
+            uiHandler.postDelayed({
+                if (!isFinishing && !isDestroyed) {
+                    appUpdater.checkForUpdates(manual = false)
+                }
+            }, 2500L)
         }
         checkShizukuAndBind()
     }
@@ -1063,10 +1073,6 @@ class MainActivity : AppCompatActivity() {
             val next = (prefs.getRightControlMode() + 1) % 3
             prefs.setRightControlMode(next)
             applyStickModes()
-        }
-
-        binding.btnDebugLog.setOnClickListener {
-            showDebugLogDialog()
         }
 
         binding.btnExit.setOnClickListener {
@@ -2310,6 +2316,22 @@ class MainActivity : AppCompatActivity() {
                 override fun onEditTouchLayoutRequested() {
                     if (::layoutEditor.isInitialized) {
                         layoutEditor.enterEditMode()
+                    }
+                }
+
+                override fun onOpenDebugLogRequested() {
+                    showDebugLogDialog()
+                }
+
+                override fun onCheckForUpdatesRequested() {
+                    if (::appUpdater.isInitialized) {
+                        appUpdater.checkForUpdates(manual = true)
+                    }
+                }
+
+                override fun onOpenUrlRequested(url: String) {
+                    if (::appUpdater.isInitialized) {
+                        appUpdater.openUrl(url)
                     }
                 }
 
