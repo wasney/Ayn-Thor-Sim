@@ -51,6 +51,7 @@ class SettingsSheetController(
         fun onExportBackupRequested()
         fun onImportBackupRequested()
         fun onReplayOnboardingRequested()
+        fun onEditTouchLayoutRequested()
         fun onVisibilityChanged(visible: Boolean)
     }
 
@@ -623,101 +624,35 @@ class SettingsSheetController(
         )
         contentContainer.addView(orientCard)
 
-        // Per-Orientation Screen Layout & Shoulder Button Layout cards (Landscape & Portrait independently)
-        fun buildOrientationLayoutCard(
-            title: String,
-            getLayout: () -> Int,
-            setLayout: (Int) -> Unit,
-            getShoulder: () -> Int,
-            setShoulder: (Int) -> Unit,
-            getStackedOrder: () -> Int,
-            setStackedOrder: (Int) -> Unit
-        ): LinearLayout {
-            val card = createFocusCard(title)
-
-            fun subLabel(textStr: String, topMarginDp: Int = 0): TextView = TextView(context).apply {
-                text = textStr
-                textSize = 11.5f
-                setTextColor(palette.textSecondary)
-                layoutParams = LinearLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT,
-                    ViewGroup.LayoutParams.WRAP_CONTENT
-                ).apply {
-                    topMargin = dp(topMarginDp)
-                    bottomMargin = dp(4)
-                }
-            }
-
-            card.addView(subLabel("Screen Layout"))
-            card.addView(
+        // Per-Orientation Screen Layout cards (Landscape & Portrait independently)
+        val landLayoutCard = createFocusCard("Landscape Screen Layout").apply {
+            addView(
                 createSegmentedPillRow(
                     options = listOf(
                         "2-Layer" to SimulatorPrefs.LAYOUT_2_LAYER,
                         "3-Layer" to SimulatorPrefs.LAYOUT_3_LAYER
                     ),
-                    currentValue = getLayout()
+                    currentValue = prefs.getLandscapeLayoutMode()
                 ) { chosen ->
-                    setLayout(chosen)
+                    prefs.setLandscapeLayoutMode(chosen)
                     callbacks.onDisplaySettingsChanged(orientationChanged = false)
                 }
             )
-
-            // Conditional Stacked Order container (shown only when Stacked shoulders is active)
-            val stackedOrderWrap = LinearLayout(context).apply {
-                orientation = LinearLayout.VERTICAL
-                visibility = if (getShoulder() == SimulatorPrefs.SHOULDER_STACKED) View.VISIBLE else View.GONE
-            }
-            stackedOrderWrap.addView(subLabel("Stacked Order", topMarginDp = 8))
-            stackedOrderWrap.addView(
-                createSegmentedPillRow(
-                    options = listOf(
-                        "L2 / L1" to SimulatorPrefs.STACKED_ORDER_2_OVER_1,
-                        "L1 / L2" to SimulatorPrefs.STACKED_ORDER_1_OVER_2
-                    ),
-                    currentValue = getStackedOrder()
-                ) { chosen ->
-                    setStackedOrder(chosen)
-                    callbacks.onDisplaySettingsChanged(orientationChanged = false)
-                }
-            )
-
-            card.addView(subLabel("Shoulders", topMarginDp = 8))
-            card.addView(
-                createSegmentedPillRow(
-                    options = listOf(
-                        "Adjacent" to SimulatorPrefs.SHOULDER_ADJACENT,
-                        "Stacked" to SimulatorPrefs.SHOULDER_STACKED
-                    ),
-                    currentValue = getShoulder()
-                ) { chosen ->
-                    setShoulder(chosen)
-                    stackedOrderWrap.visibility =
-                        if (chosen == SimulatorPrefs.SHOULDER_STACKED) View.VISIBLE else View.GONE
-                    callbacks.onDisplaySettingsChanged(orientationChanged = false)
-                }
-            )
-            card.addView(stackedOrderWrap)
-            return card
         }
-
-        val landLayoutCard = buildOrientationLayoutCard(
-            title = "Landscape Mode",
-            getLayout = { prefs.getLandscapeLayoutMode() },
-            setLayout = { prefs.setLandscapeLayoutMode(it) },
-            getShoulder = { prefs.getLandscapeShoulderLayout() },
-            setShoulder = { prefs.setLandscapeShoulderLayout(it) },
-            getStackedOrder = { prefs.getLandscapeStackedOrder() },
-            setStackedOrder = { prefs.setLandscapeStackedOrder(it) }
-        )
-        val portLayoutCard = buildOrientationLayoutCard(
-            title = "Portrait Mode",
-            getLayout = { prefs.getPortraitLayoutMode() },
-            setLayout = { prefs.setPortraitLayoutMode(it) },
-            getShoulder = { prefs.getPortraitShoulderLayout() },
-            setShoulder = { prefs.setPortraitShoulderLayout(it) },
-            getStackedOrder = { prefs.getPortraitStackedOrder() },
-            setStackedOrder = { prefs.setPortraitStackedOrder(it) }
-        )
+        val portLayoutCard = createFocusCard("Portrait Screen Layout").apply {
+            addView(
+                createSegmentedPillRow(
+                    options = listOf(
+                        "2-Layer" to SimulatorPrefs.LAYOUT_2_LAYER,
+                        "3-Layer" to SimulatorPrefs.LAYOUT_3_LAYER
+                    ),
+                    currentValue = prefs.getPortraitLayoutMode()
+                ) { chosen ->
+                    prefs.setPortraitLayoutMode(chosen)
+                    callbacks.onDisplaySettingsChanged(orientationChanged = false)
+                }
+            )
+        }
         addResponsiveCardPair(landLayoutCard, portLayoutCard)
 
         // Card 2: Screen Split slider + quick preset chips (live preview on top game!)
@@ -951,6 +886,20 @@ class SettingsSheetController(
     // Tab 3: Virtual Gamepad (Matches Variant 3B side-by-side cards!)
     // -------------------------------------------------------------------------
     private fun buildGamepadTab() {
+        val editorCard = createFocusCard("Custom Layout Editor")
+        editorCard.addView(
+            createActionRowButton(
+                title = "Edit Touch & Toolbar Layout",
+                subtitle = "Drag controls & toolbars anywhere, resize, set per-button opacity & drag screen split",
+                iconRes = R.drawable.ic_settings_gamepad,
+                primary = true
+            ) {
+                dismiss()
+                callbacks.onEditTouchLayoutRequested()
+            }
+        )
+        contentContainer.addView(editorCard)
+
         val layoutCard = createFocusCard("Button Layout")
         val tvLayoutHint = TextView(context).apply {
             text = if (prefs.getFaceButtonLayout() == SimulatorPrefs.FACE_LAYOUT_XBOX) {

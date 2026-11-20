@@ -65,6 +65,8 @@ class SimulatorPrefs(context: Context) {
         private const val KEY_PORTRAIT_SHOULDER_LAYOUT = "portrait_shoulder_layout"
         private const val KEY_LANDSCAPE_STACKED_ORDER = "landscape_stacked_order"
         private const val KEY_PORTRAIT_STACKED_ORDER = "portrait_stacked_order"
+        private const val KEY_CUSTOM_LAYOUT_LANDSCAPE = "custom_layout_landscape"
+        private const val KEY_CUSTOM_LAYOUT_PORTRAIT = "custom_layout_portrait"
         private const val KEY_PROFILE_PACKAGES = "app_profile_packages"
         private const val PREFIX_APP_PROFILE = "app_profile_"
 
@@ -392,6 +394,10 @@ class SimulatorPrefs(context: Context) {
         root.put("showL3R3", isShowL3R3())
         root.put("useKernelGamepad", isUseKernelGamepad())
         root.put("dpadFourWay", isDpadFourWayOnly())
+        root.put("landscapeLayoutMode", getLandscapeLayoutMode())
+        root.put("portraitLayoutMode", getPortraitLayoutMode())
+        prefs.getString(KEY_CUSTOM_LAYOUT_LANDSCAPE, null)?.let { root.put("customLayoutLandscape", it) }
+        prefs.getString(KEY_CUSTOM_LAYOUT_PORTRAIT, null)?.let { root.put("customLayoutPortrait", it) }
 
         root.put("hiddenPackages", JSONArray(getHiddenPackages().toList()))
         root.put("dualScreenAdded", JSONArray((prefs.getStringSet(KEY_DUAL_SCREEN_ADDED, emptySet()) ?: emptySet()).toList()))
@@ -449,6 +455,10 @@ class SimulatorPrefs(context: Context) {
             if (root.has("showL3R3")) ed.putBoolean(KEY_SHOW_L3_R3, root.getBoolean("showL3R3"))
             if (root.has("useKernelGamepad")) ed.putBoolean(KEY_USE_KERNEL_GAMEPAD, root.getBoolean("useKernelGamepad"))
             if (root.has("dpadFourWay")) ed.putBoolean(KEY_DPAD_FOUR_WAY, root.getBoolean("dpadFourWay"))
+            if (root.has("landscapeLayoutMode")) ed.putInt(KEY_LANDSCAPE_LAYOUT_MODE, root.getInt("landscapeLayoutMode"))
+            if (root.has("portraitLayoutMode")) ed.putInt(KEY_PORTRAIT_LAYOUT_MODE, root.getInt("portraitLayoutMode"))
+            if (root.has("customLayoutLandscape")) ed.putString(KEY_CUSTOM_LAYOUT_LANDSCAPE, root.getString("customLayoutLandscape"))
+            if (root.has("customLayoutPortrait")) ed.putString(KEY_CUSTOM_LAYOUT_PORTRAIT, root.getString("customLayoutPortrait"))
 
             fun readSet(arr: JSONArray?): Set<String> {
                 if (arr == null) return emptySet()
@@ -532,5 +542,55 @@ class SimulatorPrefs(context: Context) {
 
     fun setPortraitStackedOrder(order: Int) {
         prefs.edit().putInt(KEY_PORTRAIT_STACKED_ORDER, order).apply()
+    }
+
+    data class CustomItemLayout(
+        val xFrac: Float,
+        val yFrac: Float,
+        val scale: Float = 1.0f,
+        val opacity: Float = -1f
+    )
+
+    fun getCustomLayout(isPortrait: Boolean): Map<String, CustomItemLayout> {
+        val key = if (isPortrait) KEY_CUSTOM_LAYOUT_PORTRAIT else KEY_CUSTOM_LAYOUT_LANDSCAPE
+        val raw = prefs.getString(key, null) ?: return emptyMap()
+        val out = LinkedHashMap<String, CustomItemLayout>()
+        try {
+            val obj = JSONObject(raw)
+            val keys = obj.keys()
+            while (keys.hasNext()) {
+                val id = keys.next()
+                val item = obj.optJSONObject(id) ?: continue
+                out[id] = CustomItemLayout(
+                    xFrac = item.optDouble("x", 0.5).toFloat().coerceIn(0f, 1f),
+                    yFrac = item.optDouble("y", 0.5).toFloat().coerceIn(0f, 1f),
+                    scale = item.optDouble("s", 1.0).toFloat().coerceIn(0.60f, 1.50f),
+                    opacity = item.optDouble("a", -1.0).toFloat()
+                )
+            }
+        } catch (_: Throwable) {
+        }
+        return out
+    }
+
+    fun setCustomLayout(isPortrait: Boolean, layout: Map<String, CustomItemLayout>) {
+        val key = if (isPortrait) KEY_CUSTOM_LAYOUT_PORTRAIT else KEY_CUSTOM_LAYOUT_LANDSCAPE
+        if (layout.isEmpty()) {
+            prefs.edit().remove(key).apply()
+            return
+        }
+        val obj = JSONObject()
+        for ((id, item) in layout) {
+            obj.put(
+                id,
+                JSONObject().apply {
+                    put("x", item.xFrac.toDouble())
+                    put("y", item.yFrac.toDouble())
+                    put("s", item.scale.toDouble())
+                    put("a", item.opacity.toDouble())
+                }
+            )
+        }
+        prefs.edit().putString(key, obj.toString()).apply()
     }
 }

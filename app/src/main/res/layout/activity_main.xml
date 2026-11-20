@@ -799,6 +799,7 @@
 
         <!-- Left Utility Bar -->
         <LinearLayout
+            android:id="@+id/leftUtilityBar"
             android:layout_width="match_parent"
             android:layout_height="34dp"
             android:gravity="start|center_vertical"
@@ -944,6 +945,7 @@
 
         <!-- Right Utility Bar -->
         <LinearLayout
+            android:id="@+id/rightUtilityBar"
             android:layout_width="match_parent"
             android:layout_height="34dp"
             android:gravity="end|center_vertical"
@@ -1074,5 +1076,21 @@
                 android:layout_marginBottom="8dp" />
         </LinearLayout>
     </LinearLayout>
+
+
+    <!-- Full-screen pass-through layer for custom-positioned gamepad controls & utility toolbars -->
+    <FrameLayout
+        android:id="@+id/freeControlsLayer"
+        android:layout_width="0dp"
+        android:layout_height="0dp"
+        android:clickable="false"
+        android:clipChildren="false"
+        android:clipToPadding="false"
+        android:elevation="12dp"
+        android:focusable="false"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="parent" />
 
 </androidx.constraintlayout.widget.ConstraintLayout>

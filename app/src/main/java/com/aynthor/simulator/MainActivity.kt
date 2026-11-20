@@ -64,6 +64,7 @@ import androidx.activity.OnBackPressedCallback
 import com.aynthor.simulator.prefs.SimulatorPrefs
 import com.aynthor.simulator.ui.SettingsSheetController
 import com.aynthor.simulator.ui.OnboardingOverlayController
+import com.aynthor.simulator.ui.LayoutEditorController
 import com.aynthor.simulator.service.VirtualDisplayUserService
 import rikka.shizuku.Shizuku
 import java.util.concurrent.Executors
@@ -84,6 +85,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var prefs: SimulatorPrefs
     private lateinit var settingsSheet: SettingsSheetController
     private lateinit var onboardingOverlay: OnboardingOverlayController
+    private lateinit var layoutEditor: LayoutEditorController
     private lateinit var inputManager: InputManager
     private lateinit var launcherAdapter: AppLauncherAdapter
     private lateinit var bottomLauncherAdapter: AppLauncherAdapter
@@ -199,7 +201,7 @@ class MainActivity : AppCompatActivity() {
             .daemon(false)
             .processNameSuffix("virtual_display_service")
             .debuggable(false)
-            .version(53)
+            .version(54)
     }
 
     private val serviceConnection = object : ServiceConnection {
@@ -272,17 +274,23 @@ class MainActivity : AppCompatActivity() {
             if (::onboardingOverlay.isInitialized) {
                 onboardingOverlay.onLayoutSizeChanged()
             }
+            if (::layoutEditor.isInitialized && !layoutEditor.isEditModeActive && v.width > 0 && v.height > 0) {
+                layoutEditor.applySavedLayoutForCurrentOrientation()
+            }
         }
         setupSurfaces()
         setupLauncher()
         setupUtilityBar()
         setupBottomHomeScreen()
         setupVirtualGamepad()
+        setupLayoutEditor()
         setupSettingsSheet()
         setupOnboardingOverlay()
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
-                if (::onboardingOverlay.isInitialized && onboardingOverlay.isInWizardMode) {
+                if (::layoutEditor.isInitialized && layoutEditor.isEditModeActive) {
+                    layoutEditor.exitEditMode(save = true)
+                } else if (::onboardingOverlay.isInitialized && onboardingOverlay.isInWizardMode) {
                     onboardingOverlay.dismiss(markOnboardingDone = true)
                 } else if (::settingsSheet.isInitialized && settingsSheet.isVisible) {
                     settingsSheet.dismiss()
@@ -436,6 +444,9 @@ class MainActivity : AppCompatActivity() {
         binding.rightSidebar.layoutParams = rightLp
 
         applyShoulderButtonLayout(isStackedShoulders, stackedOrder)
+        if (::layoutEditor.isInitialized) {
+            binding.root.post { layoutEditor.applySavedLayoutForCurrentOrientation() }
+        }
     }
 
     private fun applyShoulderButtonLayout(stacked: Boolean, stackedOrder: Int) {
@@ -512,7 +523,8 @@ class MainActivity : AppCompatActivity() {
             binding.bottomLauncherOverlay.visibility == View.VISIBLE ||
             binding.shizukuOverlay.visibility == View.VISIBLE ||
             (::settingsSheet.isInitialized && settingsSheet.isVisible) ||
-            (::onboardingOverlay.isInitialized && onboardingOverlay.isVisible)
+            (::onboardingOverlay.isInitialized && onboardingOverlay.isVisible) ||
+            (::layoutEditor.isInitialized && layoutEditor.isEditModeActive)
         val shouldBeNotFocusable = !needsFocus
         if (shouldBeNotFocusable == isWindowNotFocusable) return
         isWindowNotFocusable = shouldBeNotFocusable
@@ -1136,9 +1148,18 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun applyTouchControlsVisibility(visible: Boolean) {
+        if (::layoutEditor.isInitialized && layoutEditor.isEditModeActive) return
         val vis = if (visible) View.VISIBLE else View.INVISIBLE
         binding.leftGamepadContainer.visibility = vis
         binding.rightGamepadContainer.visibility = vis
+        if (::layoutEditor.isInitialized) {
+            for (v in layoutEditor.getGamepadViews()) {
+                v.visibility = vis
+            }
+            if (visible) {
+                applyStickModes()
+            }
+        }
     }
 
     private fun applyGamepadAppearance() {
@@ -1152,6 +1173,9 @@ class MainActivity : AppCompatActivity() {
             v.scaleY = scale
         }
         applyStickModes()
+        if (::layoutEditor.isInitialized && !layoutEditor.isEditModeActive) {
+            layoutEditor.applySavedLayoutForCurrentOrientation()
+        }
     }
 
     private fun handleVirtualKey(keyCode: Int, isDown: Boolean) {
@@ -2185,12 +2209,59 @@ class MainActivity : AppCompatActivity() {
                     }
                 }
 
+                override fun onEditTouchLayoutRequested() {
+                    if (::layoutEditor.isInitialized) {
+                        layoutEditor.enterEditMode()
+                    }
+                }
+
                 override fun onVisibilityChanged(visible: Boolean) {
                     updateWindowFocusability()
                 }
             }
         )
         settingsSheet.attachTo(binding.rootLayout)
+    }
+
+    private fun setupLayoutEditor() {
+        layoutEditor = LayoutEditorController(
+            context = this,
+            prefs = prefs,
+            freeControlsLayer = binding.freeControlsLayer,
+            callbacks = object : LayoutEditorController.Callbacks {
+                override fun onSplitPercentChanged() {
+                    activeProfileSplit = null
+                    applyDisplayLayout()
+                    syncSurfaceMetadata()
+                }
+
+                override fun onEditModeChanged(editing: Boolean) {
+                    updateWindowFocusability()
+                }
+
+                override fun onRequestNormalVisibilityRestore() {
+                    updatePhysicalControllerState()
+                    applyGamepadAppearance()
+                }
+            }
+        )
+        layoutEditor.registerItems(
+            linkedMapOf(
+                LayoutEditorController.ItemId.L2 to binding.btnL2,
+                LayoutEditorController.ItemId.L1 to binding.btnL1,
+                LayoutEditorController.ItemId.DPAD to binding.virtualDpad,
+                LayoutEditorController.ItemId.LSTICK to binding.leftStickWrapper,
+                LayoutEditorController.ItemId.SELECT to binding.btnSelect,
+                LayoutEditorController.ItemId.R1 to binding.btnR1,
+                LayoutEditorController.ItemId.R2 to binding.btnR2,
+                LayoutEditorController.ItemId.ABXY to binding.virtualFaceButtons,
+                LayoutEditorController.ItemId.RSTICK to binding.rightStickWrapper,
+                LayoutEditorController.ItemId.START to binding.btnStart,
+                LayoutEditorController.ItemId.LEFT_BAR to binding.leftUtilityBar,
+                LayoutEditorController.ItemId.RIGHT_BAR to binding.rightUtilityBar
+            )
+        )
+        layoutEditor.attachTo(binding.rootLayout)
     }
 
     private fun setupOnboardingOverlay() {
