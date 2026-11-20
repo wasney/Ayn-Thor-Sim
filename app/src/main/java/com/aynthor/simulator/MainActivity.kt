@@ -1667,7 +1667,7 @@ class MainActivity : AppCompatActivity() {
             holder.setFixedSize(targetW, targetH)
         }
         ioExecutor.execute {
-            userService?.resizeBottomDisplay(targetW, targetH, BOTTOM_DPI)
+            userService?.resizeBottomDisplay(targetW, targetH, VIRTUAL_DPI)
         }
     }
 
