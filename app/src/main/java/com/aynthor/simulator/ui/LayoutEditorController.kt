@@ -75,6 +75,7 @@ class LayoutEditorController(
 
     private val items = LinkedHashMap<ItemId, View>()
     private val defaultSlots = HashMap<ItemId, DefaultSlot>()
+    private val placeholders = HashMap<ItemId, View>()
     private val cachedBaseSizes = HashMap<ItemId, Pair<Int, Int>>()
 
     private val editorOverlay: FrameLayout
@@ -569,7 +570,23 @@ class LayoutEditorController(
         cachedBaseSizes[id] = baseW to baseH
 
         if (view.parent !== freeControlsLayer) {
-            (view.parent as? ViewGroup)?.removeView(view)
+            val oldParent = view.parent as? ViewGroup
+            val slot = defaultSlots[id]
+            if (oldParent != null && slot != null && oldParent === slot.parent) {
+                val idx = oldParent.indexOfChild(view)
+                oldParent.removeView(view)
+                val existingPh = placeholders[id]
+                if (existingPh == null || existingPh.parent !== oldParent) {
+                    (existingPh?.parent as? ViewGroup)?.removeView(existingPh)
+                    val ph = android.widget.Space(context).apply {
+                        visibility = View.INVISIBLE
+                    }
+                    oldParent.addView(ph, idx.coerceIn(0, oldParent.childCount), copyLayoutParams(slot.layoutParams))
+                    placeholders[id] = ph
+                }
+            } else {
+                oldParent?.removeView(view)
+            }
             freeControlsLayer.addView(view, FrameLayout.LayoutParams(baseW, baseH))
         } else {
             val lp = view.layoutParams as FrameLayout.LayoutParams
@@ -604,8 +621,20 @@ class LayoutEditorController(
 
         if (view.parent !== slot.parent) {
             (view.parent as? ViewGroup)?.removeView(view)
-            val insertIdx = slot.index.coerceIn(0, slot.parent.childCount)
+            val ph = placeholders.remove(id)
+            val insertIdx = if (ph != null && ph.parent === slot.parent) {
+                val phIdx = slot.parent.indexOfChild(ph)
+                slot.parent.removeView(ph)
+                phIdx.coerceIn(0, slot.parent.childCount)
+            } else {
+                (ph?.parent as? ViewGroup)?.removeView(ph)
+                slot.index.coerceIn(0, slot.parent.childCount)
+            }
             slot.parent.addView(view, insertIdx, copyLayoutParams(slot.layoutParams))
+        } else {
+            placeholders.remove(id)?.let { ph ->
+                (ph.parent as? ViewGroup)?.removeView(ph)
+            }
         }
         view.translationX = 0f
         view.translationY = 0f
