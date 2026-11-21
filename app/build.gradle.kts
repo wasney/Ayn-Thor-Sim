@@ -11,8 +11,8 @@ android {
         applicationId = "com.droids.app"
         minSdk = 31
         targetSdk = 35
-        versionCode = 60
-        versionName = "2.9.0-pre"
+        versionCode = 62
+        versionName = "2.9.2-pre"
     }
 
     signingConfigs {

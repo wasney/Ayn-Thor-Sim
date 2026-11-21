@@ -404,15 +404,76 @@ class LayoutEditorController(
     fun getToolbarViews(): List<View> =
         items.filterKeys { it.isToolbar }.values.toList()
 
+    private fun sideModeFor(id: ItemId): Int = when (id) {
+        ItemId.L2, ItemId.L1, ItemId.DPAD, ItemId.LSTICK, ItemId.SELECT, ItemId.LEFT_BAR ->
+            prefs.getLeftControlMode()
+        ItemId.R1, ItemId.R2, ItemId.ABXY, ItemId.RSTICK, ItemId.START, ItemId.RIGHT_BAR ->
+            prefs.getRightControlMode()
+    }
+
+    private fun storageKeyFor(id: ItemId): String = "${id.key}@${sideModeFor(id)}"
+
+    private fun resolveSavedItem(
+        map: Map<String, SimulatorPrefs.CustomItemLayout>,
+        id: ItemId
+    ): SimulatorPrefs.CustomItemLayout? {
+        val modeKey = storageKeyFor(id)
+        map[modeKey]?.let { return it }
+        // Legacy un-suffixed keys migrate seamlessly into MODE_BOTH (D+LS / ABXY+RS)
+        if (sideModeFor(id) == SimulatorPrefs.MODE_BOTH) {
+            return map[id.key]
+        }
+        return null
+    }
+
+    private fun isItemActiveInCurrentMode(id: ItemId): Boolean {
+        val leftMode = prefs.getLeftControlMode()
+        val rightMode = prefs.getRightControlMode()
+        return when (id) {
+            ItemId.DPAD -> leftMode == SimulatorPrefs.MODE_PRIMARY || leftMode == SimulatorPrefs.MODE_BOTH
+            ItemId.LSTICK -> leftMode == SimulatorPrefs.MODE_STICK || leftMode == SimulatorPrefs.MODE_BOTH
+            ItemId.ABXY -> rightMode == SimulatorPrefs.MODE_PRIMARY || rightMode == SimulatorPrefs.MODE_BOTH
+            ItemId.RSTICK -> rightMode == SimulatorPrefs.MODE_STICK || rightMode == SimulatorPrefs.MODE_BOTH
+            else -> true
+        }
+    }
+
+    private fun modeBadgeLabel(isLeft: Boolean, mode: Int): String = if (isLeft) {
+        when (mode) {
+            SimulatorPrefs.MODE_STICK -> "L-STK"
+            SimulatorPrefs.MODE_BOTH -> "D+LS"
+            else -> "D-PAD"
+        }
+    } else {
+        when (mode) {
+            SimulatorPrefs.MODE_STICK -> "R-STK"
+            SimulatorPrefs.MODE_BOTH -> "ABXY+RS"
+            else -> "ABXY"
+        }
+    }
+
     fun isItemCustomized(id: ItemId, isPortrait: Boolean = isPortraitNow()): Boolean {
         val map = if (isEditing) workingMap else prefs.getCustomLayout(isPortrait)
-        return map.containsKey(id.key)
+        return resolveSavedItem(map, id) != null
     }
 
     /**
      * Applies the saved custom layout (for the current orientation) to all registered items.
      * Items without a custom entry are cleanly restored to their original default XML slots.
      */
+    /**
+     * Restores all items to their default XML slots and clears cached base sizes so a fresh
+     * layout pass measures true container dimensions after importing a JSON backup.
+     */
+    fun resetForPreferenceImport() {
+        val globalAlpha = prefs.getGamepadOpacity()
+        val globalScale = prefs.getGamepadScale()
+        for (id in items.keys) {
+            restoreItemToDefaultSlot(id, globalAlpha, globalScale)
+        }
+        cachedBaseSizes.clear()
+    }
+
     fun applySavedLayoutForCurrentOrientation() {
         val rootW = freeControlsLayer.width
         val rootH = freeControlsLayer.height
@@ -422,15 +483,17 @@ class LayoutEditorController(
         val globalAlpha = prefs.getGamepadOpacity()
         val globalScale = prefs.getGamepadScale()
 
-        // First restore any non-customized items back to their default containers in index order
-        val toRestore = items.keys.filter { !savedMap.containsKey(it.key) }
+        // First restore any non-customized (or inactive) items back to their default containers
+        val toRestore = items.keys.filter { !isItemActiveInCurrentMode(it) || resolveSavedItem(savedMap, it) == null }
         for (id in toRestore) {
             restoreItemToDefaultSlot(id, globalAlpha, globalScale)
+            cachedBaseSizes.remove(id)
         }
 
-        // Next place customized items into freeControlsLayer
+        // Next place customized active items into freeControlsLayer
         for ((id, view) in items) {
-            val custom = savedMap[id.key] ?: continue
+            if (!isItemActiveInCurrentMode(id)) continue
+            val custom = resolveSavedItem(savedMap, id) ?: continue
             placeItemInFreeLayer(id, view, custom, rootW, rootH, globalAlpha)
         }
 
@@ -448,11 +511,17 @@ class LayoutEditorController(
         isEditing = true
         val portrait = isPortraitNow()
         workingMap = HashMap(prefs.getCustomLayout(portrait))
-        tvEditingBadge.text = if (portrait) "Editing: Portrait" else "Editing: Landscape"
+        val orientText = if (portrait) "Portrait" else "Landscape"
+        val leftLbl = modeBadgeLabel(true, prefs.getLeftControlMode())
+        val rightLbl = modeBadgeLabel(false, prefs.getRightControlMode())
+        tvEditingBadge.text = "$orientText • $leftLbl | $rightLbl"
 
-        // Ensure all 12 items are visible during Edit Mode so user can arrange sticks & buttons
-        for ((_, view) in items) {
-            view.visibility = View.VISIBLE
+        // Show only items active in the current Left/Right control modes for WYSIWYG editing
+        for ((id, view) in items) {
+            view.visibility = if (isItemActiveInCurrentMode(id)) View.VISIBLE else View.GONE
+        }
+        if (!isItemActiveInCurrentMode(selectedId)) {
+            selectedId = items.keys.firstOrNull { isItemActiveInCurrentMode(it) } ?: ItemId.L1
         }
 
         // Capture base sizes of any unmeasured views before moving
@@ -483,7 +552,19 @@ class LayoutEditorController(
         if (!isEditing) return
         isEditing = false
         if (save) {
-            prefs.setCustomLayout(isPortraitNow(), workingMap)
+            val density = context.resources.displayMetrics.density.coerceAtLeast(1f)
+            val enriched = LinkedHashMap<String, SimulatorPrefs.CustomItemLayout>()
+            for ((k, item) in workingMap) {
+                val baseKey = k.substringBefore("@")
+                val id = ItemId.values().firstOrNull { it.key == baseKey }
+                val cached = if (id != null) cachedBaseSizes[id] else null
+                enriched[k] = if ((item.baseWdp <= 0f || item.baseHdp <= 0f) && cached != null) {
+                    item.copy(baseWdp = cached.first / density, baseHdp = cached.second / density)
+                } else {
+                    item
+                }
+            }
+            prefs.setCustomLayout(isPortraitNow(), enriched)
         }
         editorOverlay.visibility = View.GONE
         proxyLayer.removeAllViews()
@@ -539,8 +620,12 @@ class LayoutEditorController(
     }
 
     private fun ensureItemInWorkingMap(id: ItemId): SimulatorPrefs.CustomItemLayout {
-        val existing = workingMap[id.key]
-        if (existing != null) return existing
+        val key = storageKeyFor(id)
+        val existing = resolveSavedItem(workingMap, id)
+        if (existing != null) {
+            workingMap[key] = existing
+            return existing
+        }
 
         val view = items[id]!!
         val rootW = freeControlsLayer.width.coerceAtLeast(1)
@@ -555,13 +640,17 @@ class LayoutEditorController(
         } else {
             1.0f
         }
+        val density = context.resources.displayMetrics.density.coerceAtLeast(1f)
+        val (normW, normH) = cachedBaseSizes[id] ?: normalizeBaseSize(id, box.width, box.height)
         val created = SimulatorPrefs.CustomItemLayout(
             xFrac = (box.centerX / rootW).coerceIn(0.05f, 0.95f),
             yFrac = (box.centerY / rootH).coerceIn(0.05f, 0.95f),
             scale = initScale,
-            opacity = -1f
+            opacity = -1f,
+            baseWdp = normW / density,
+            baseHdp = normH / density
         )
-        workingMap[id.key] = created
+        workingMap[key] = created
         placeItemInFreeLayer(id, view, created, rootW, rootH, prefs.getGamepadOpacity())
         return created
     }
@@ -574,9 +663,15 @@ class LayoutEditorController(
         rootH: Int,
         globalAlpha: Float
     ) {
-        val rawSize = cachedBaseSizes[id]
+        val density = context.resources.displayMetrics.density.coerceAtLeast(1f)
+        val savedPxSize = if (custom.baseWdp > 0f && custom.baseHdp > 0f) {
+            (custom.baseWdp * density).roundToInt().coerceAtLeast(dp(24)) to
+                (custom.baseHdp * density).roundToInt().coerceAtLeast(dp(24))
+        } else null
+        val rawSize = savedPxSize
+            ?: cachedBaseSizes[id]
             ?: (if (view.width > 0 && view.height > 0) (view.width to view.height) else fallbackBaseSize(id))
-        val (baseW, baseH) = normalizeBaseSize(id, rawSize.first, rawSize.second)
+        val (baseW, baseH) = if (savedPxSize != null) savedPxSize else normalizeBaseSize(id, rawSize.first, rawSize.second)
         cachedBaseSizes[id] = baseW to baseH
 
         if (view.parent !== freeControlsLayer) {
@@ -662,6 +757,7 @@ class LayoutEditorController(
         proxyLayer.removeAllViews()
         proxyBoxes.clear()
         for (id in items.keys) {
+            if (!isItemActiveInCurrentMode(id)) continue
             val box = View(context).apply {
                 isClickable = true
                 isFocusable = true
@@ -758,7 +854,7 @@ class LayoutEditorController(
                             xFrac = (newCx / rootW).coerceIn(0f, 1f),
                             yFrac = (newCy / rootH).coerceIn(0f, 1f)
                         )
-                        workingMap[id.key] = updated
+                        workingMap[storageKeyFor(id)] = updated
                         placeItemInFreeLayer(id, items[id]!!, updated, rootW, rootH, prefs.getGamepadOpacity())
                         syncAllProxiesAndSplitBar()
                     }
@@ -818,7 +914,7 @@ class LayoutEditorController(
     }
 
     private fun syncInspectorSliders() {
-        val cur = workingMap[selectedId.key]
+        val cur = resolveSavedItem(workingMap, selectedId)
         val scalePct = ((cur?.scale ?: if (!selectedId.isToolbar &&
                 (selectedId == ItemId.DPAD || selectedId == ItemId.LSTICK || selectedId == ItemId.ABXY || selectedId == ItemId.RSTICK)
             ) prefs.getGamepadScale() else 1.0f) * 100f).roundToInt().coerceIn(60, 150)
@@ -841,7 +937,7 @@ class LayoutEditorController(
     private fun updateSelectedScale(newScale: Float) {
         val cur = ensureItemInWorkingMap(selectedId)
         val updated = cur.copy(scale = newScale.coerceIn(0.60f, 1.50f))
-        workingMap[selectedId.key] = updated
+        workingMap[storageKeyFor(selectedId)] = updated
         placeItemInFreeLayer(
             selectedId,
             items[selectedId]!!,
@@ -856,7 +952,7 @@ class LayoutEditorController(
     private fun updateSelectedOpacity(newOpacity: Float) {
         val cur = ensureItemInWorkingMap(selectedId)
         val updated = cur.copy(opacity = newOpacity.coerceIn(0.20f, 1.0f))
-        workingMap[selectedId.key] = updated
+        workingMap[storageKeyFor(selectedId)] = updated
         placeItemInFreeLayer(
             selectedId,
             items[selectedId]!!,
@@ -868,20 +964,28 @@ class LayoutEditorController(
     }
 
     private fun resetSelectedItem() {
-        workingMap.remove(selectedId.key)
+        workingMap.remove(storageKeyFor(selectedId))
+        if (sideModeFor(selectedId) == SimulatorPrefs.MODE_BOTH) {
+            workingMap.remove(selectedId.key)
+        }
+        cachedBaseSizes.remove(selectedId)
         restoreItemToDefaultSlot(selectedId, prefs.getGamepadOpacity(), prefs.getGamepadScale())
-        items[selectedId]?.visibility = View.VISIBLE
+        items[selectedId]?.visibility = if (isItemActiveInCurrentMode(selectedId)) View.VISIBLE else View.GONE
         syncInspectorSliders()
         freeControlsLayer.post { if (isEditing) syncAllProxiesAndSplitBar() }
     }
 
     private fun resetAllItems() {
-        workingMap.clear()
         val globalAlpha = prefs.getGamepadOpacity()
         val globalScale = prefs.getGamepadScale()
         for (id in items.keys) {
+            workingMap.remove(storageKeyFor(id))
+            if (sideModeFor(id) == SimulatorPrefs.MODE_BOTH) {
+                workingMap.remove(id.key)
+            }
+            cachedBaseSizes.remove(id)
             restoreItemToDefaultSlot(id, globalAlpha, globalScale)
-            items[id]?.visibility = View.VISIBLE
+            items[id]?.visibility = if (isItemActiveInCurrentMode(id)) View.VISIBLE else View.GONE
         }
         syncInspectorSliders()
         freeControlsLayer.post { if (isEditing) syncAllProxiesAndSplitBar() }

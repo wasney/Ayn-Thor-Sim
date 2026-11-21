@@ -398,6 +398,11 @@ class SimulatorPrefs(context: Context) {
         root.put("dpadFourWay", isDpadFourWayOnly())
         root.put("landscapeLayoutMode", getLandscapeLayoutMode())
         root.put("portraitLayoutMode", getPortraitLayoutMode())
+        root.put("landscapeShoulderLayout", getLandscapeShoulderLayout())
+        root.put("portraitShoulderLayout", getPortraitShoulderLayout())
+        root.put("landscapeStackedOrder", getLandscapeStackedOrder())
+        root.put("portraitStackedOrder", getPortraitStackedOrder())
+        root.put("autoCheckUpdates", isAutoCheckUpdatesEnabled())
         prefs.getString(KEY_CUSTOM_LAYOUT_LANDSCAPE, null)?.let { root.put("customLayoutLandscape", it) }
         prefs.getString(KEY_CUSTOM_LAYOUT_PORTRAIT, null)?.let { root.put("customLayoutPortrait", it) }
 
@@ -459,6 +464,11 @@ class SimulatorPrefs(context: Context) {
             if (root.has("dpadFourWay")) ed.putBoolean(KEY_DPAD_FOUR_WAY, root.getBoolean("dpadFourWay"))
             if (root.has("landscapeLayoutMode")) ed.putInt(KEY_LANDSCAPE_LAYOUT_MODE, root.getInt("landscapeLayoutMode"))
             if (root.has("portraitLayoutMode")) ed.putInt(KEY_PORTRAIT_LAYOUT_MODE, root.getInt("portraitLayoutMode"))
+            if (root.has("landscapeShoulderLayout")) ed.putInt(KEY_LANDSCAPE_SHOULDER_LAYOUT, root.getInt("landscapeShoulderLayout"))
+            if (root.has("portraitShoulderLayout")) ed.putInt(KEY_PORTRAIT_SHOULDER_LAYOUT, root.getInt("portraitShoulderLayout"))
+            if (root.has("landscapeStackedOrder")) ed.putInt(KEY_LANDSCAPE_STACKED_ORDER, root.getInt("landscapeStackedOrder"))
+            if (root.has("portraitStackedOrder")) ed.putInt(KEY_PORTRAIT_STACKED_ORDER, root.getInt("portraitStackedOrder"))
+            if (root.has("autoCheckUpdates")) ed.putBoolean(KEY_AUTO_CHECK_UPDATES, root.getBoolean("autoCheckUpdates"))
             if (root.has("customLayoutLandscape")) ed.putString(KEY_CUSTOM_LAYOUT_LANDSCAPE, root.getString("customLayoutLandscape"))
             if (root.has("customLayoutPortrait")) ed.putString(KEY_CUSTOM_LAYOUT_PORTRAIT, root.getString("customLayoutPortrait"))
 
@@ -564,7 +574,9 @@ class SimulatorPrefs(context: Context) {
         val xFrac: Float,
         val yFrac: Float,
         val scale: Float = 1.0f,
-        val opacity: Float = -1f
+        val opacity: Float = -1f,
+        val baseWdp: Float = 0f,
+        val baseHdp: Float = 0f
     )
 
     fun getCustomLayout(isPortrait: Boolean): Map<String, CustomItemLayout> {
@@ -581,7 +593,9 @@ class SimulatorPrefs(context: Context) {
                     xFrac = item.optDouble("x", 0.5).toFloat().coerceIn(0f, 1f),
                     yFrac = item.optDouble("y", 0.5).toFloat().coerceIn(0f, 1f),
                     scale = item.optDouble("s", 1.0).toFloat().coerceIn(0.60f, 1.50f),
-                    opacity = item.optDouble("a", -1.0).toFloat()
+                    opacity = item.optDouble("a", -1.0).toFloat(),
+                    baseWdp = item.optDouble("bw", 0.0).toFloat().coerceIn(0f, 600f),
+                    baseHdp = item.optDouble("bh", 0.0).toFloat().coerceIn(0f, 600f)
                 )
             }
         } catch (_: Throwable) {
@@ -604,6 +618,10 @@ class SimulatorPrefs(context: Context) {
                     put("y", item.yFrac.toDouble())
                     put("s", item.scale.toDouble())
                     put("a", item.opacity.toDouble())
+                    if (item.baseWdp > 0f && item.baseHdp > 0f) {
+                        put("bw", item.baseWdp.toDouble())
+                        put("bh", item.baseHdp.toDouble())
+                    }
                 }
             )
         }

@@ -205,7 +205,7 @@ class MainActivity : AppCompatActivity() {
             .daemon(false)
             .processNameSuffix("virtual_display_service")
             .debuggable(false)
-            .version(60)
+            .version(62)
     }
 
     private val serviceConnection = object : ServiceConnection {
@@ -1077,12 +1077,18 @@ class MainActivity : AppCompatActivity() {
             val next = (prefs.getLeftControlMode() + 1) % 3
             prefs.setLeftControlMode(next)
             applyStickModes()
+            if (::layoutEditor.isInitialized && !layoutEditor.isEditModeActive) {
+                binding.root.post { layoutEditor.applySavedLayoutForCurrentOrientation() }
+            }
         }
 
         binding.btnToggleRightStick.setOnClickListener {
             val next = (prefs.getRightControlMode() + 1) % 3
             prefs.setRightControlMode(next)
             applyStickModes()
+            if (::layoutEditor.isInitialized && !layoutEditor.isEditModeActive) {
+                binding.root.post { layoutEditor.applySavedLayoutForCurrentOrientation() }
+            }
         }
 
         binding.btnExit.setOnClickListener {
@@ -2263,17 +2269,25 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun applyAllPreferences() {
+        if (::layoutEditor.isInitialized) {
+            layoutEditor.resetForPreferenceImport()
+        }
         binding.virtualFaceButtons.isXboxLayout = (prefs.getFaceButtonLayout() == SimulatorPrefs.FACE_LAYOUT_XBOX)
         applyAppTheme()
         applyOrientationMode()
         applyDisplayLayout()
         syncSurfaceMetadata()
-        applyGamepadAppearance()
+        // Update visibility/stick modes first, then apply saved custom layout after one layout pass
+        // so legacy backups without saved baseWdp/baseHdp measure true post-import container sizes.
+        applyStickModes()
         applyBottomHomeWidgetVisibility()
         updatePhysicalControllerState()
         updateDrawerFilterButtons()
         refreshLauncherList()
         updateBottomActionButton()
+        binding.root.post {
+            applyGamepadAppearance()
+        }
     }
 
     private fun setupSettingsSheet() {
