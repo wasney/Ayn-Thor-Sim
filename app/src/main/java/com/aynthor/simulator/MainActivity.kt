@@ -947,7 +947,7 @@ class MainActivity : AppCompatActivity() {
 
         // Detect installed browsers via standard HTTPS VIEW intent
         val browserPkgs = try {
-            val browserIntent = Intent(Intent.ACTION_VIEW, Uri.parse("https://example.com"))
+            val browserIntent = Intent(Intent.ACTION_VIEW, android.net.Uri.parse("https://example.com"))
             packageManager.queryIntentActivities(browserIntent, PackageManager.MATCH_ALL)
                 .map { it.activityInfo.packageName }
                 .toSet()
