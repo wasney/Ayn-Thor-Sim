@@ -744,6 +744,16 @@ class MainActivity : AppCompatActivity() {
                 if (launcherAdapter.itemCount > 0) {
                     launcherAdapter.setSelectedPosition(0)
                 }
+                if (binding.topSplashOverlay.visibility == View.VISIBLE) {
+                    binding.topSplashOverlay.animate()
+                        .alpha(0f)
+                        .setDuration(220L)
+                        .withEndAction {
+                            binding.topSplashOverlay.visibility = View.GONE
+                            binding.topSplashOverlay.alpha = 1f
+                        }
+                        .start()
+                }
             }
         }
     }
@@ -2206,6 +2216,9 @@ class MainActivity : AppCompatActivity() {
 
         binding.rootLayout.setBackgroundColor(rootBg)
         binding.launcherOverlay.setBackgroundColor(overlayBg)
+        binding.topSplashOverlay.setBackgroundColor(if (isLight) Color.parseColor("#FFF4F5F8") else Color.parseColor("#FF0B0B0F"))
+        binding.tvSplashTitle.setTextColor(primaryText)
+        binding.tvSplashSubtitle.setTextColor(secondaryText)
         binding.bottomLauncherOverlay.setBackgroundColor(overlayBg)
         binding.bottomHomeOverlay.setBackgroundColor(overlayBg)
 

@@ -200,6 +200,54 @@
                 android:focusable="true" />
         </LinearLayout>
 
+        <!-- Startup Splash / Loading Overlay (covers top screen while apps load) -->
+        <LinearLayout
+            android:id="@+id/topSplashOverlay"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:background="#FF0B0B0F"
+            android:clickable="true"
+            android:focusable="true"
+            android:gravity="center"
+            android:orientation="vertical"
+            android:padding="24dp">
+
+            <ImageView
+                android:id="@+id/ivSplashIcon"
+                android:layout_width="56dp"
+                android:layout_height="56dp"
+                android:contentDescription="@string/app_name"
+                android:src="@mipmap/ic_launcher_round" />
+
+            <TextView
+                android:id="@+id/tvSplashTitle"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:text="@string/app_name"
+                android:textColor="#FFFFFF"
+                android:textSize="22sp"
+                android:textStyle="bold" />
+
+            <ProgressBar
+                android:id="@+id/pbSplashLoading"
+                style="?android:attr/progressBarStyleSmall"
+                android:layout_width="28dp"
+                android:layout_height="28dp"
+                android:layout_marginTop="12dp"
+                android:indeterminate="true"
+                android:indeterminateTint="#4C9AFF" />
+
+            <TextView
+                android:id="@+id/tvSplashSubtitle"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:text="Loading apps…"
+                android:textColor="#9CA3AF"
+                android:textSize="12.5sp" />
+        </LinearLayout>
+
         <!-- Shizuku Permission / Status Overlay -->
         <LinearLayout
             android:id="@+id/shizukuOverlay"

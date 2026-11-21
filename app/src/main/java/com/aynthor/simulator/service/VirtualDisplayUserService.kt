@@ -19,11 +19,11 @@ import android.view.MotionEvent
 import android.view.Surface
 import com.aynthor.simulator.IVirtualDisplayService
 import java.lang.reflect.Method
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.concurrent.Executors
+import java.time.LocalTime
+import java.time.format.DateTimeFormatter
 import java.util.Locale
-import java.util.concurrent.CopyOnWriteArrayList
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 import kotlin.system.exitProcess
 
 @SuppressLint("WrongConstant", "PrivateApi", "DiscouragedPrivateApi")
@@ -35,22 +35,31 @@ class VirtualDisplayUserService(private val baseContext: Context) : IVirtualDisp
         private const val VIRTUAL_DISPLAY_FLAG_OWN_FOCUS = 1 shl 14 // 16384
         private const val INJECT_INPUT_EVENT_MODE_ASYNC = 0
         private const val MAX_LOG_LINES = 300
+        private const val AM_TIMEOUT_SECONDS = 5L
+        private val TIME_FORMATTER: DateTimeFormatter = DateTimeFormatter.ofPattern("HH:mm:ss.SSS", Locale.US)
+        private val PACKAGE_NAME_REGEX = Regex("^[A-Za-z][A-Za-z0-9_]*(\.[A-Za-z0-9_]+)+$")
+        private val ACTIVITY_NAME_REGEX = Regex("^[A-Za-z0-9_.$]+$")
     }
 
-    private val logLines = CopyOnWriteArrayList<String>()
-    private val timeFormat = SimpleDateFormat("HH:mm:ss.SSS", Locale.US)
+    private val logLock = Any()
+    private val logLines = ArrayDeque<String>(MAX_LOG_LINES)
+    @Volatile private var perfPathsResolved = false
+    private var cachedCpuFreqFiles: List<java.io.File> = emptyList()
+    private var cachedCpuTempFile: java.io.File? = null
 
     private fun log(msg: String, tr: Throwable? = null) {
-        val ts = timeFormat.format(Date())
+        val ts = LocalTime.now().format(TIME_FORMATTER)
         val line = if (tr != null) {
             "$ts | $msg -> ${tr.javaClass.simpleName}: ${tr.message}"
         } else {
             "$ts | $msg"
         }
         Log.i(TAG, line, tr)
-        logLines.add(line)
-        while (logLines.size > MAX_LOG_LINES) {
-            logLines.removeAt(0)
+        synchronized(logLock) {
+            if (logLines.size >= MAX_LOG_LINES) {
+                logLines.removeFirst()
+            }
+            logLines.addLast(line)
         }
     }
 
@@ -377,6 +386,12 @@ class VirtualDisplayUserService(private val baseContext: Context) : IVirtualDisp
         pressures: FloatArray
     ) {
         if (displayId <= 0 || pointerCount <= 0) return
+        if (pointerCount > pointerIds.size || pointerCount > xs.size ||
+            pointerCount > ys.size || pointerCount > pressures.size
+        ) {
+            log("injectTouchEvent rejected: pointerCount=$pointerCount exceeds array lengths")
+            return
+        }
         var event: MotionEvent? = null
         try {
             val properties = Array(pointerCount) { i ->
@@ -485,7 +500,6 @@ class VirtualDisplayUserService(private val baseContext: Context) : IVirtualDisp
             }
             val ok = uinputGamepad.sendKey(keyCode, isDown)
             if (ok) {
-                log("uinputKey(${KeyEvent.keyCodeToString(keyCode)}, down=$isDown, disp=$displayId) -> true")
                 return
             }
         }
@@ -637,8 +651,10 @@ class VirtualDisplayUserService(private val baseContext: Context) : IVirtualDisp
             val ok = injectInputEventMethod?.invoke(inputManager, event, INJECT_INPUT_EVENT_MODE_ASYNC) as? Boolean
             val dt = android.os.SystemClock.uptimeMillis() - t0
             if (event is KeyEvent) {
-                val slowTag = if (dt > 150L) " [SLOW ${dt}ms]" else ""
-                log("injectKey(${KeyEvent.keyCodeToString(event.keyCode)}, act=${event.action}, disp=$displayId) -> $ok$slowTag")
+                if (dt > 150L || ok == false) {
+                    val slowTag = if (dt > 150L) " [SLOW ${dt}ms]" else ""
+                    log("injectKey(${KeyEvent.keyCodeToString(event.keyCode)}, act=${event.action}, disp=$displayId) -> $ok$slowTag")
+                }
             } else if (dt > 150L) {
                 log("SLOW injectMotion(src=0x${Integer.toHexString(event.source)}, disp=$displayId) -> $ok [${dt}ms]")
             } else if (ok == false && (event.source and InputDevice.SOURCE_JOYSTICK) != InputDevice.SOURCE_JOYSTICK) {
@@ -656,6 +672,14 @@ class VirtualDisplayUserService(private val baseContext: Context) : IVirtualDisp
         activityName: String,
         displayId: Int
     ): Boolean {
+        if (displayId <= 0 ||
+            packageName.startsWith("-") || activityName.startsWith("-") ||
+            !PACKAGE_NAME_REGEX.matches(packageName) ||
+            !ACTIVITY_NAME_REGEX.matches(activityName)
+        ) {
+            log("launchAppOnDisplay rejected invalid args: pkg=$packageName, act=$activityName, disp=$displayId")
+            return false
+        }
         return try {
             val component = "$packageName/$activityName"
             val process = ProcessBuilder(
@@ -665,7 +689,13 @@ class VirtualDisplayUserService(private val baseContext: Context) : IVirtualDisp
                 "--activity-single-top",
                 "--activity-reorder-to-front"
             ).redirectErrorStream(true).start()
-            val exitCode = process.waitFor()
+            val finished = process.waitFor(AM_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+            if (!finished) {
+                process.destroyForcibly()
+                log("am start timed out after ${AM_TIMEOUT_SECONDS}s: $component")
+                return false
+            }
+            val exitCode = process.exitValue()
             invalidateFocusCache()
             log("am start --display $displayId -n $component -> exitCode=$exitCode")
             exitCode == 0
@@ -816,11 +846,21 @@ class VirtualDisplayUserService(private val baseContext: Context) : IVirtualDisp
     }
 
     override fun forceStopPackage(packageName: String): Boolean {
+        if (packageName.startsWith("-") || !PACKAGE_NAME_REGEX.matches(packageName)) {
+            log("forceStopPackage rejected invalid package: $packageName")
+            return false
+        }
         return try {
             val process = ProcessBuilder("am", "force-stop", packageName)
                 .redirectErrorStream(true)
                 .start()
-            val exitCode = process.waitFor()
+            val finished = process.waitFor(AM_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+            if (!finished) {
+                process.destroyForcibly()
+                log("am force-stop timed out after ${AM_TIMEOUT_SECONDS}s: $packageName")
+                return false
+            }
+            val exitCode = process.exitValue()
             log("am force-stop $packageName -> exitCode=$exitCode")
             exitCode == 0
         } catch (e: Throwable) {
@@ -830,23 +870,22 @@ class VirtualDisplayUserService(private val baseContext: Context) : IVirtualDisp
     }
 
     override fun getDebugLog(): String {
-        return uinputGamepad.statusSummary + "\n" + logLines.joinToString("\n")
+        val snapshot = synchronized(logLock) { logLines.joinToString("\n") }
+        return uinputGamepad.statusSummary + "\n" + snapshot
     }
 
-    override fun getPerformanceStats(displayId: Int): String {
-        // Format: cpuMhz|cpuTempC|gpuMhz|gpuLoadPct|fps
-        var maxCpuKhz = 0L
+    private fun resolvePerfSysfsPaths() {
+        if (perfPathsResolved) return
+        perfPathsResolved = true
         try {
+            val cores = mutableListOf<java.io.File>()
             for (core in 0..11) {
                 val f = java.io.File("/sys/devices/system/cpu/cpu$core/cpufreq/scaling_cur_freq")
-                if (!f.exists()) continue
-                val khz = f.readText().trim().toLongOrNull() ?: 0L
-                if (khz > maxCpuKhz) maxCpuKhz = khz
+                if (f.exists()) cores.add(f)
             }
+            cachedCpuFreqFiles = cores
         } catch (_: Throwable) {}
-        val cpuStr = if (maxCpuKhz > 0) String.format(Locale.US, "%.2f GHz", maxCpuKhz / 1_000_000.0) else "--"
 
-        var cpuTempC = -1.0
         try {
             val thermalDir = java.io.File("/sys/class/thermal")
             val zones = thermalDir.listFiles { file -> file.name.startsWith("thermal_zone") } ?: emptyArray()
@@ -855,13 +894,41 @@ class VirtualDisplayUserService(private val baseContext: Context) : IVirtualDisp
                 val tempFile = java.io.File(zone, "temp")
                 if (!typeFile.exists() || !tempFile.exists()) continue
                 val type = typeFile.readText().trim().lowercase(Locale.US)
-                if (type.contains("cpu") || type.contains("soc") || type.contains("tsens") || type.contains("ap")) {
+                val isCpuZone = type.contains("cpu") || type.contains("soc") ||
+                    type.contains("tsens") || type.contains("exynos") ||
+                    type.contains("qcom") || type.contains("msm_therm") ||
+                    type.contains("ap_therm") || type.contains("ap-therm")
+                if (isCpuZone) {
                     val raw = tempFile.readText().trim().toDoubleOrNull() ?: continue
                     val degC = if (raw > 1000.0) raw / 1000.0 else raw
                     if (degC in 15.0..110.0) {
-                        cpuTempC = degC
+                        cachedCpuTempFile = tempFile
                         break
                     }
+                }
+            }
+        } catch (_: Throwable) {}
+    }
+
+    override fun getPerformanceStats(displayId: Int): String {
+        // Format: cpuGhz|cpuTempC|gpuMhz|gpuLoadPct
+        resolvePerfSysfsPaths()
+        var maxCpuKhz = 0L
+        try {
+            for (f in cachedCpuFreqFiles) {
+                val khz = f.readText().trim().toLongOrNull() ?: 0L
+                if (khz > maxCpuKhz) maxCpuKhz = khz
+            }
+        } catch (_: Throwable) {}
+        val cpuStr = if (maxCpuKhz > 0) String.format(Locale.US, "%.2f GHz", maxCpuKhz / 1_000_000.0) else "--"
+
+        var cpuTempC = -1.0
+        try {
+            cachedCpuTempFile?.let { tempFile ->
+                val raw = tempFile.readText().trim().toDoubleOrNull()
+                if (raw != null) {
+                    val degC = if (raw > 1000.0) raw / 1000.0 else raw
+                    if (degC in 15.0..110.0) cpuTempC = degC
                 }
             }
         } catch (_: Throwable) {}

@@ -23,14 +23,14 @@ And let's be honest: if you really wanted an AYN Thor or a similar dual-screen h
   * Automatic physical controller detection (tested with GameSir) hides on-screen controls, drops sidebar margins for full-width bottom display space, and automatically switches the bottom display between **Thor (`1240:1080`)** for dual-screen emulators (zero stretching) and native full-width **Fill** for browsers, YouTube, and companion apps.
 * **Modern Bottom-Anchored Quick Settings & Auto-Updater:** Two-pane translucent Settings sheet with a thumb-reachable left icon rail, swipe-down/tap-top dismissal, live preview, and an **About & Updates** tab featuring GitHub Releases auto/manual update checks with in-app APK install, Debug/Crash Logs, links, and credits.
 * **Built-In First-Launch Setup Guide:** Interactive Shizuku setup checklist with live status checkmarks, 1-tap shortcuts to **Download / Open Shizuku**, **Developer Options**, and **Battery Settings**, plus offline usage tips.
-* **Configurable Bottom Home & Quick Control Center:** Handheld dashboard with toggleable **Clock**, **Live Performance Monitor** (FPS, CPU, GPU, RAM, Battery), **Quick Shortcuts**, **Brightness & Volume sliders**, **Wi-Fi / Bluetooth** shortcuts, and an **AMOLED Dim / Sleep Bottom Screen** overlay.
+* **Configurable Bottom Home & Quick Control Center:** Handheld dashboard with toggleable **Clock**, **Live Performance Monitor** (CPU, GPU, RAM, Battery), **Quick Shortcuts**, **Brightness & Volume sliders**, **Wi-Fi / Bluetooth** shortcuts, and an **AMOLED Dim / Sleep Bottom Screen** overlay.
 * **Power-User App Drawers, Profiles & Backups:** Live search, Recently Launched row, custom folders, Dual-Screen app toggles, **Per-App Layout Profiles** (long-press any app), live **Screen Swap**, quick-return pill for paused dual-screen games, and full **JSON Settings Backup & Restore**.
 
 ---
 
 ## Requirements & Setup
 
-1. Download and install the latest **`DroiDS-vX.Y.Z-debug.apk`** from **GitHub Releases**.
+1. Download and install the latest **`DroiDS-vX.Y.Z.apk`** from **GitHub Releases**.
 2. Open **DroiDS** and follow the built-in **Setup Guide**—it will detect whether **[Shizuku](https://shizuku.rikka.app/)** is installed and give you 1-tap shortcuts to download/open it, jump to **Developer Options**, and grant permission.
 3. *(Offline tip)* Wi-Fi is only needed once after a phone reboot to start Shizuku via Wireless Debugging—keep **USB Debugging** enabled and DroiDS will continue working completely offline.
 4. Launch any game or emulator on the top screen, or tap **`+`** to launch a companion app on the bottom screen.
@@ -43,4 +43,4 @@ And let's be honest: if you really wanted an AYN Thor or a similar dual-screen h
 
 ## Building from Source
 
-Builds automatically via GitHub Actions (`.github/workflows/build-apk.yml`) using **JDK 17**, **Android SDK 35**, and **Gradle 8.9**, publishing signed versioned APKs to GitHub Releases with a consistent debug keystore for seamless in-place upgrades.
+Builds automatically via GitHub Actions (`.github/workflows/build-apk.yml`) when a `DroiDS-v*.zip` release archive is pushed to `main` (or triggered manually), using **JDK 17**, **Android SDK 35**, and **Gradle 8.9** and signing release APKs with repository secrets. See [`AI_CONTEXT.md`](AI_CONTEXT.md) for architecture notes and key design decisions.

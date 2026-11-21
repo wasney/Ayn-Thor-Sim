@@ -8,7 +8,7 @@ android {
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "com.aynthor.simulator"
+        applicationId = "com.droids.app"
         minSdk = 31
         targetSdk = 35
         versionCode = 60
@@ -16,20 +16,29 @@ android {
     }
 
     signingConfigs {
-        getByName("debug") {
-            storeFile = file("debug.keystore")
-            storePassword = "android"
-            keyAlias = "androiddebugkey"
-            keyPassword = "android"
+        create("release") {
+            val ksPath = System.getenv("DROIDS_KEYSTORE_PATH")
+            if (!ksPath.isNullOrBlank()) {
+                storeFile = file(ksPath)
+                storePassword = System.getenv("DROIDS_KEYSTORE_PASSWORD") ?: ""
+                keyAlias = System.getenv("DROIDS_KEY_ALIAS") ?: ""
+                keyPassword = System.getenv("DROIDS_KEY_PASSWORD") ?: ""
+            }
         }
     }
 
     buildTypes {
         debug {
-            signingConfig = signingConfigs.getByName("debug")
+            // Uses standard local Android debug signing when building locally
         }
         release {
+            // Keep R8 minification disabled: VirtualDisplayUserService relies on reflection
+            // into hidden Android DisplayManager / InputManager / ActivityTaskManager APIs.
             isMinifyEnabled = false
+            val ksPath = System.getenv("DROIDS_KEYSTORE_PATH")
+            if (!ksPath.isNullOrBlank()) {
+                signingConfig = signingConfigs.getByName("release")
+            }
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
