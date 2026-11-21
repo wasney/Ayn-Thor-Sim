@@ -205,7 +205,7 @@ class MainActivity : AppCompatActivity() {
             .daemon(false)
             .processNameSuffix("virtual_display_service")
             .debuggable(false)
-            .version(63)
+            .version(64)
     }
 
     private val serviceConnection = object : ServiceConnection {
@@ -912,18 +912,22 @@ class MainActivity : AppCompatActivity() {
         val folders = prefs.getFolders()
         val options = mutableListOf("All Apps")
         options.addAll(folders)
+        val createIdx = options.size
         options.add("+ Create New Folder")
+        val autoIdx = options.size
+        options.add("Auto-Organize into Folders…")
 
         AlertDialog.Builder(this)
             .setTitle(if (isTop) "Top Drawer Folder" else "Bottom Drawer Folder")
             .setItems(options.toTypedArray()) { _, which ->
-                when {
-                    which == 0 -> {
+                when (which) {
+                    0 -> {
                         if (isTop) selectedTopFolder = null else selectedBottomFolder = null
                         updateDrawerFilterButtons()
                         refreshLauncherList()
                     }
-                    which == options.lastIndex -> showCreateFolderDialog()
+                    createIdx -> showCreateFolderDialog()
+                    autoIdx -> showAutoOrganizeFoldersDialog()
                     else -> {
                         val chosen = folders[which - 1]
                         if (isTop) selectedTopFolder = chosen else selectedBottomFolder = chosen
@@ -932,6 +936,101 @@ class MainActivity : AppCompatActivity() {
                     }
                 }
             }
+            .show()
+    }
+
+    private fun showAutoOrganizeFoldersDialog() {
+        if (allApps.isEmpty()) {
+            Toast.makeText(this, "Still loading apps…", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        // Detect installed browsers via standard HTTPS VIEW intent
+        val browserPkgs = try {
+            val browserIntent = Intent(Intent.ACTION_VIEW, Uri.parse("https://example.com"))
+            packageManager.queryIntentActivities(browserIntent, PackageManager.MATCH_ALL)
+                .map { it.activityInfo.packageName }
+                .toSet()
+        } catch (_: Throwable) {
+            emptySet()
+        }
+
+        val emuKeywords = listOf(
+            "retroarch", "drastic", "melonds", "seedlessds", "azahar", "citra", "lime3ds",
+            "dolphin", "ppsspp", "duckstation", "aethersx2", "nethersx2", "cemu", "yuzu",
+            "suyu", "sudachi", "citron", "ryujinx", "nx2android", "banananative", "winlator",
+            "gamehub", "mobox", "vita3k", "flycast", "redream", "mupen", "lemuroid",
+            "daijisho", "es-de", "pegasus", "recomp", "quiver", "moonlight", "artemis",
+            "chiaki", "xbplay", "steamlink", "geforcenow", "pizzaboy", "myboy", "myoldboy"
+        )
+
+        val buckets = LinkedHashMap<String, MutableList<String>>()
+        fun addToBucket(folder: String, pkg: String) {
+            buckets.getOrPut(folder) { mutableListOf() }.add(pkg)
+        }
+
+        for (app in allApps) {
+            val pkgLow = app.packageName.lowercase(Locale.US)
+            val lblLow = app.label.lowercase(Locale.US)
+            val isEmu = prefs.isDualScreenApp(app.packageName) ||
+                emuKeywords.any { kw -> pkgLow.contains(kw) || lblLow.contains(kw) }
+
+            when {
+                isEmu -> addToBucket("Emulators & Ports", app.packageName)
+                app.category == android.content.pm.ApplicationInfo.CATEGORY_GAME ->
+                    addToBucket("Games", app.packageName)
+                browserPkgs.contains(app.packageName) ||
+                    pkgLow.contains("browser") || pkgLow.contains("firefox") || pkgLow.contains("iceraven") ->
+                    addToBucket("Browsers", app.packageName)
+                app.category == android.content.pm.ApplicationInfo.CATEGORY_VIDEO ||
+                    app.category == android.content.pm.ApplicationInfo.CATEGORY_AUDIO ||
+                    app.category == android.content.pm.ApplicationInfo.CATEGORY_IMAGE ->
+                    addToBucket("Media", app.packageName)
+                app.category == android.content.pm.ApplicationInfo.CATEGORY_SOCIAL ||
+                    app.category == android.content.pm.ApplicationInfo.CATEGORY_NEWS ->
+                    addToBucket("Social", app.packageName)
+                app.category == android.content.pm.ApplicationInfo.CATEGORY_PRODUCTIVITY ||
+                    app.category == android.content.pm.ApplicationInfo.CATEGORY_MAPS ||
+                    pkgLow.contains("shizuku") ->
+                    addToBucket("Tools", app.packageName)
+            }
+        }
+
+        if (buckets.isEmpty()) {
+            Toast.makeText(this, "No apps matched automatic categories", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        val summary = buildString {
+            appendLine("Group installed apps into these folders:")
+            appendLine()
+            for ((name, pkgs) in buckets) {
+                appendLine("• $name (${pkgs.size} apps)")
+            }
+            appendLine()
+            append("Existing custom folders won't be removed.")
+        }
+
+        AlertDialog.Builder(this)
+            .setTitle("Auto-Organize App Drawer")
+            .setMessage(summary)
+            .setPositiveButton("Organize") { _, _ ->
+                var totalAssigned = 0
+                for ((folderName, pkgs) in buckets) {
+                    prefs.addFolder(folderName)
+                    for (pkg in pkgs) {
+                        prefs.setAppInFolder(folderName, pkg, true)
+                        totalAssigned++
+                    }
+                }
+                Toast.makeText(
+                    this,
+                    "Organized $totalAssigned apps into ${buckets.size} folders",
+                    Toast.LENGTH_SHORT
+                ).show()
+                refreshLauncherList()
+            }
+            .setNegativeButton("Cancel", null)
             .show()
     }
 
