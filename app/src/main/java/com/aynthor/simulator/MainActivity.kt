@@ -205,7 +205,7 @@ class MainActivity : AppCompatActivity() {
             .daemon(false)
             .processNameSuffix("virtual_display_service")
             .debuggable(false)
-            .version(62)
+            .version(63)
     }
 
     private val serviceConnection = object : ServiceConnection {
@@ -304,6 +304,10 @@ class MainActivity : AppCompatActivity() {
             override fun handleOnBackPressed() {
                 if (::layoutEditor.isInitialized && layoutEditor.isEditModeActive) {
                     layoutEditor.exitEditMode(save = true)
+                } else if (::launcherAdapter.isInitialized && launcherAdapter.multiSelectMode) {
+                    exitDrawerMultiSelect(isTop = true)
+                } else if (::bottomLauncherAdapter.isInitialized && bottomLauncherAdapter.multiSelectMode) {
+                    exitDrawerMultiSelect(isTop = false)
                 } else if (::onboardingOverlay.isInitialized && onboardingOverlay.isInWizardMode) {
                     onboardingOverlay.dismiss(markOnboardingDone = true)
                 } else if (::settingsSheet.isInitialized && settingsSheet.isVisible) {
@@ -662,7 +666,8 @@ class MainActivity : AppCompatActivity() {
                 prefs.recordAppLaunch(app.packageName)
                 launchAppOnDisplay(app, activeTopDisplayId, hideLauncherAfter = true)
             },
-            onAppLongClick = { app -> showAppContextMenu(app) }
+            onAppLongClick = { app -> showAppContextMenu(app, isTopDrawer = true) },
+            onSelectionChanged = { updateMultiSelectBarUi(isTop = true) }
         )
         binding.appRecyclerView.apply {
             layoutManager = GridLayoutManager(this@MainActivity, 5)
@@ -675,13 +680,16 @@ class MainActivity : AppCompatActivity() {
                 binding.bottomLauncherOverlay.visibility = View.GONE
                 launchAppOnDisplay(app, activeBottomDisplayId, hideLauncherAfter = false)
             },
-            onAppLongClick = { app -> showAppContextMenu(app) }
+            onAppLongClick = { app -> showAppContextMenu(app, isTopDrawer = false) },
+            onSelectionChanged = { updateMultiSelectBarUi(isTop = false) }
         )
         binding.bottomAppRecyclerView.apply {
             layoutManager = GridLayoutManager(this@MainActivity, 3)
             adapter = bottomLauncherAdapter
         }
+        setupDrawerMultiSelectBars()
         binding.btnCancelBottomLauncher.setOnClickListener {
+            exitDrawerMultiSelect(isTop = false)
             binding.bottomLauncherOverlay.visibility = View.GONE
         }
         binding.btnCloseBottomApp.setOnClickListener {
@@ -946,12 +954,178 @@ class MainActivity : AppCompatActivity() {
             .show()
     }
 
-    private fun showAppContextMenu(app: AppInfo) {
+    private fun setupDrawerMultiSelectBars() {
+        binding.btnTopSelectAll.setOnClickListener { launcherAdapter.toggleSelectAllVisible() }
+        binding.btnTopMultiCreateFolder.setOnClickListener { showBatchCreateFolderDialog(isTop = true) }
+        binding.btnTopMultiAddFolder.setOnClickListener { showBatchFolderDialog(isTop = true) }
+        binding.btnTopMultiHide.setOnClickListener { applyBatchHide(isTop = true) }
+        binding.btnTopMultiDual.setOnClickListener { applyBatchDualScreen(isTop = true) }
+        binding.btnTopMultiDone.setOnClickListener { exitDrawerMultiSelect(isTop = true) }
+
+        binding.btnBottomSelectAll.setOnClickListener { bottomLauncherAdapter.toggleSelectAllVisible() }
+        binding.btnBottomMultiCreateFolder.setOnClickListener { showBatchCreateFolderDialog(isTop = false) }
+        binding.btnBottomMultiAddFolder.setOnClickListener { showBatchFolderDialog(isTop = false) }
+        binding.btnBottomMultiHide.setOnClickListener { applyBatchHide(isTop = false) }
+        binding.btnBottomMultiDual.setOnClickListener { applyBatchDualScreen(isTop = false) }
+        binding.btnBottomMultiDone.setOnClickListener { exitDrawerMultiSelect(isTop = false) }
+    }
+
+    private fun enterDrawerMultiSelect(isTop: Boolean, initialPackage: String) {
+        val adapter = if (isTop) launcherAdapter else bottomLauncherAdapter
+        adapter.enterMultiSelect(initialPackage)
+        updateMultiSelectBarUi(isTop)
+    }
+
+    private fun exitDrawerMultiSelect(isTop: Boolean) {
+        val adapter = if (isTop) launcherAdapter else bottomLauncherAdapter
+        adapter.exitMultiSelect()
+        updateMultiSelectBarUi(isTop)
+    }
+
+    private fun updateMultiSelectBarUi(isTop: Boolean) {
+        val adapter = if (isTop) launcherAdapter else bottomLauncherAdapter
+        val bar = if (isTop) binding.topMultiSelectBar else binding.bottomMultiSelectBar
+        if (!adapter.multiSelectMode) {
+            bar.visibility = View.GONE
+            return
+        }
+        bar.visibility = View.VISIBLE
+        val count = adapter.getSelectedCount()
+        val selectedPkgs = adapter.getSelectedPackages()
+        val allHidden = selectedPkgs.isNotEmpty() && selectedPkgs.all { prefs.getHiddenPackages().contains(it) }
+        val allDual = selectedPkgs.isNotEmpty() && selectedPkgs.all { prefs.isDualScreenApp(it) }
+        val allSelected = adapter.isAllVisibleSelected()
+
+        if (isTop) {
+            binding.tvTopSelectCount.text = "$count selected"
+            binding.btnTopSelectAll.text = if (allSelected) "None" else "All"
+            binding.btnTopMultiHide.text = if (allHidden) "Unhide" else "Hide"
+            binding.btnTopMultiDual.text = if (allDual) "Unmark 2-Scr" else "2-Scr"
+            binding.btnTopMultiCreateFolder.isEnabled = count > 0
+            binding.btnTopMultiAddFolder.isEnabled = count > 0
+            binding.btnTopMultiHide.isEnabled = count > 0
+            binding.btnTopMultiDual.isEnabled = count > 0
+        } else {
+            binding.tvBottomSelectCount.text = "$count"
+            binding.btnBottomSelectAll.text = if (allSelected) "None" else "All"
+            binding.btnBottomMultiHide.text = if (allHidden) "Unhide" else "Hide"
+            binding.btnBottomMultiDual.text = if (allDual) "No 2-Scr" else "2-Scr"
+            binding.btnBottomMultiCreateFolder.isEnabled = count > 0
+            binding.btnBottomMultiAddFolder.isEnabled = count > 0
+            binding.btnBottomMultiHide.isEnabled = count > 0
+            binding.btnBottomMultiDual.isEnabled = count > 0
+        }
+    }
+
+    private fun showBatchCreateFolderDialog(isTop: Boolean) {
+        val adapter = if (isTop) launcherAdapter else bottomLauncherAdapter
+        val pkgs = adapter.getSelectedPackages()
+        if (pkgs.isEmpty()) return
+        val input = android.widget.EditText(this).apply {
+            hint = "Folder name (e.g., 3DS, Switch, Recomps)"
+            setSingleLine(true)
+        }
+        AlertDialog.Builder(this)
+            .setTitle("Create Folder (${pkgs.size} apps)")
+            .setView(input)
+            .setPositiveButton("Create") { _, _ ->
+                val name = input.text?.toString()?.trim().orEmpty()
+                if (name.isNotEmpty()) {
+                    prefs.addFolder(name)
+                    for (pkg in pkgs) {
+                        prefs.setAppInFolder(name, pkg, true)
+                    }
+                    Toast.makeText(this, "Added ${pkgs.size} apps to "$name"", Toast.LENGTH_SHORT).show()
+                    exitDrawerMultiSelect(isTop)
+                    refreshLauncherList()
+                }
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private fun showBatchFolderDialog(isTop: Boolean) {
+        val adapter = if (isTop) launcherAdapter else bottomLauncherAdapter
+        val pkgs = adapter.getSelectedPackages()
+        if (pkgs.isEmpty()) return
+        val folders = prefs.getFolders()
+        val currentFolder = if (isTop) selectedTopFolder else selectedBottomFolder
+
+        val options = mutableListOf<String>()
+        if (currentFolder != null) {
+            options.add("Remove ${pkgs.size} apps from "$currentFolder"")
+        }
+        options.addAll(folders.map { "Add to "$it"" })
+        options.add("+ Create New Folder…")
+
+        AlertDialog.Builder(this)
+            .setTitle("Organize ${pkgs.size} Selected Apps")
+            .setItems(options.toTypedArray()) { _, which ->
+                var idx = which
+                if (currentFolder != null) {
+                    if (idx == 0) {
+                        for (pkg in pkgs) {
+                            prefs.setAppInFolder(currentFolder, pkg, false)
+                        }
+                        Toast.makeText(this, "Removed ${pkgs.size} apps from "$currentFolder"", Toast.LENGTH_SHORT).show()
+                        exitDrawerMultiSelect(isTop)
+                        refreshLauncherList()
+                        return@setItems
+                    }
+                    idx -= 1
+                }
+                if (idx < folders.size) {
+                    val target = folders[idx]
+                    for (pkg in pkgs) {
+                        prefs.setAppInFolder(target, pkg, true)
+                    }
+                    Toast.makeText(this, "Added ${pkgs.size} apps to "$target"", Toast.LENGTH_SHORT).show()
+                    exitDrawerMultiSelect(isTop)
+                    refreshLauncherList()
+                } else {
+                    showBatchCreateFolderDialog(isTop)
+                }
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private fun applyBatchHide(isTop: Boolean) {
+        val adapter = if (isTop) launcherAdapter else bottomLauncherAdapter
+        val pkgs = adapter.getSelectedPackages()
+        if (pkgs.isEmpty()) return
+        val allHidden = pkgs.all { prefs.getHiddenPackages().contains(it) }
+        val hideNow = !allHidden
+        for (pkg in pkgs) {
+            prefs.setPackageHidden(pkg, hideNow)
+        }
+        val verb = if (hideNow) "Hidden" else "Unhidden"
+        Toast.makeText(this, "$verb ${pkgs.size} apps", Toast.LENGTH_SHORT).show()
+        exitDrawerMultiSelect(isTop)
+        refreshLauncherList()
+    }
+
+    private fun applyBatchDualScreen(isTop: Boolean) {
+        val adapter = if (isTop) launcherAdapter else bottomLauncherAdapter
+        val pkgs = adapter.getSelectedPackages()
+        if (pkgs.isEmpty()) return
+        val allDual = pkgs.all { prefs.isDualScreenApp(it) }
+        val markDual = !allDual
+        for (pkg in pkgs) {
+            prefs.setDualScreenApp(pkg, markDual)
+        }
+        val verb = if (markDual) "Marked" else "Unmarked"
+        Toast.makeText(this, "$verb ${pkgs.size} apps as Dual-Screen", Toast.LENGTH_SHORT).show()
+        exitDrawerMultiSelect(isTop)
+    }
+
+    private fun showAppContextMenu(app: AppInfo, isTopDrawer: Boolean = true) {
         val folders = prefs.getFolders()
         val isHidden = prefs.getHiddenPackages().contains(app.packageName)
         val isDualScreen = prefs.isDualScreenApp(app.packageName)
         val hasProfile = prefs.getAppProfile(app.packageName) != null
         val actions = mutableListOf(
+            "Select Multiple Apps",
             if (isHidden) "Unhide App" else "Hide App",
             "Assign to Folders…",
             if (isDualScreen) "Unmark as Dual-Screen App" else "Mark as Dual-Screen App",
@@ -961,11 +1135,12 @@ class MainActivity : AppCompatActivity() {
             .setTitle(app.label)
             .setItems(actions.toTypedArray()) { _, which ->
                 when (which) {
-                    0 -> {
+                    0 -> enterDrawerMultiSelect(isTopDrawer, app.packageName)
+                    1 -> {
                         prefs.setPackageHidden(app.packageName, !isHidden)
                         refreshLauncherList()
                     }
-                    1 -> {
+                    2 -> {
                         if (folders.isEmpty()) {
                             showCreateFolderDialog()
                         } else {
@@ -981,12 +1156,12 @@ class MainActivity : AppCompatActivity() {
                                 .show()
                         }
                     }
-                    2 -> {
+                    3 -> {
                         prefs.setDualScreenApp(app.packageName, !isDualScreen)
                         val msg = if (!isDualScreen) "${app.label} marked as Dual-Screen App" else "${app.label} unmarked as Dual-Screen App"
                         Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
                     }
-                    3 -> showAppProfileDialog(app)
+                    4 -> showAppProfileDialog(app)
                 }
             }
             .show()
@@ -2222,6 +2397,11 @@ class MainActivity : AppCompatActivity() {
 
         binding.rootLayout.setBackgroundColor(rootBg)
         binding.launcherOverlay.setBackgroundColor(overlayBg)
+        val msBg = if (isLight) Color.parseColor("#FFE5ECFB") else Color.parseColor("#FF1A2233")
+        binding.topMultiSelectBar.setBackgroundColor(msBg)
+        binding.bottomMultiSelectBar.setBackgroundColor(msBg)
+        binding.tvTopSelectCount.setTextColor(primaryText)
+        binding.tvBottomSelectCount.setTextColor(primaryText)
         binding.topSplashOverlay.setBackgroundColor(if (isLight) Color.parseColor("#FFF4F5F8") else Color.parseColor("#FF0B0B0F"))
         binding.tvSplashTitle.setTextColor(primaryText)
         binding.tvSplashSubtitle.setTextColor(secondaryText)

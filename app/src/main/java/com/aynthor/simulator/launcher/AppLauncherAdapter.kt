@@ -13,12 +13,19 @@ import com.aynthor.simulator.R
 
 class AppLauncherAdapter(
     private val onAppClick: (AppInfo) -> Unit,
-    private val onAppLongClick: ((AppInfo) -> Unit)? = null
+    private val onAppLongClick: ((AppInfo) -> Unit)? = null,
+    private val onSelectionChanged: ((Int) -> Unit)? = null
 ) : RecyclerView.Adapter<AppLauncherAdapter.AppViewHolder>() {
 
     private val items = mutableListOf<AppInfo>()
+    private val checkedPackages = LinkedHashSet<String>()
+
+    var multiSelectMode: Boolean = false
+        private set
+
     var selectedPosition: Int = -1
         private set
+
     var isLightTheme: Boolean = false
         set(value) {
             if (field != value) {
@@ -26,6 +33,55 @@ class AppLauncherAdapter(
                 notifyDataSetChanged()
             }
         }
+
+    fun enterMultiSelect(initialPackage: String? = null) {
+        multiSelectMode = true
+        checkedPackages.clear()
+        if (!initialPackage.isNullOrBlank()) {
+            checkedPackages.add(initialPackage)
+        }
+        notifyDataSetChanged()
+        onSelectionChanged?.invoke(checkedPackages.size)
+    }
+
+    fun exitMultiSelect() {
+        if (!multiSelectMode && checkedPackages.isEmpty()) return
+        multiSelectMode = false
+        checkedPackages.clear()
+        notifyDataSetChanged()
+        onSelectionChanged?.invoke(0)
+    }
+
+    fun togglePackageSelection(packageName: String) {
+        if (!multiSelectMode) return
+        if (!checkedPackages.add(packageName)) {
+            checkedPackages.remove(packageName)
+        }
+        val idx = items.indexOfFirst { it.packageName == packageName }
+        if (idx >= 0) notifyItemChanged(idx) else notifyDataSetChanged()
+        onSelectionChanged?.invoke(checkedPackages.size)
+    }
+
+    fun toggleSelectAllVisible() {
+        if (!multiSelectMode) return
+        val visiblePkgs = items.map { it.packageName }
+        val allVisibleSelected = visiblePkgs.isNotEmpty() && visiblePkgs.all { checkedPackages.contains(it) }
+        if (allVisibleSelected) {
+            checkedPackages.removeAll(visiblePkgs.toSet())
+        } else {
+            checkedPackages.addAll(visiblePkgs)
+        }
+        notifyDataSetChanged()
+        onSelectionChanged?.invoke(checkedPackages.size)
+    }
+
+    fun isAllVisibleSelected(): Boolean {
+        return items.isNotEmpty() && items.all { checkedPackages.contains(it.packageName) }
+    }
+
+    fun getSelectedPackages(): List<String> = checkedPackages.toList()
+
+    fun getSelectedCount(): Int = checkedPackages.size
 
     fun submitList(newItems: List<AppInfo>) {
         items.clear()
@@ -62,7 +118,9 @@ class AppLauncherAdapter(
     }
 
     override fun onBindViewHolder(holder: AppViewHolder, position: Int) {
-        holder.bind(items[position], position == selectedPosition)
+        val app = items[position]
+        val isChecked = multiSelectMode && checkedPackages.contains(app.packageName)
+        holder.bind(app, position == selectedPosition, isChecked)
     }
 
     override fun getItemCount(): Int = items.size
@@ -70,15 +128,17 @@ class AppLauncherAdapter(
     inner class AppViewHolder(itemView: View) : RecyclerView.ViewHolder(itemView) {
         private val iconView: ImageView = itemView.findViewById(R.id.appIcon)
         private val labelView: TextView = itemView.findViewById(R.id.appLabel)
+        private val badgeView: TextView = itemView.findViewById(R.id.appSelectBadge)
 
-        fun bind(app: AppInfo, isSelected: Boolean) {
+        fun bind(app: AppInfo, isFocusSelected: Boolean, isChecked: Boolean) {
             iconView.setImageDrawable(app.icon)
             labelView.text = app.label
             labelView.setTextColor(if (isLightTheme) Color.parseColor("#18181B") else Color.parseColor("#F0F0F5"))
 
+            val highlighted = if (multiSelectMode) isChecked else isFocusSelected
             val bg = GradientDrawable().apply {
                 cornerRadius = 18f
-                if (isSelected) {
+                if (highlighted) {
                     setColor(if (isLightTheme) Color.parseColor("#DBEAFE") else Color.parseColor("#1E3A5F"))
                     setStroke(4, Color.parseColor("#4C9AFF"))
                 } else {
@@ -88,16 +148,42 @@ class AppLauncherAdapter(
             }
             itemView.background = bg
 
+            if (multiSelectMode) {
+                badgeView.visibility = View.VISIBLE
+                val badgeBg = GradientDrawable().apply {
+                    shape = GradientDrawable.OVAL
+                    if (isChecked) {
+                        setColor(Color.parseColor("#4C9AFF"))
+                    } else {
+                        setColor(if (isLightTheme) Color.parseColor("#22000000") else Color.parseColor("#33000000"))
+                        setStroke(3, if (isLightTheme) Color.parseColor("#71717A") else Color.parseColor("#88FFFFFF"))
+                    }
+                }
+                badgeView.background = badgeBg
+                badgeView.text = if (isChecked) "✓" else ""
+            } else {
+                badgeView.visibility = View.GONE
+            }
+
             itemView.isFocusable = true
             itemView.isFocusableInTouchMode = false
 
             itemView.setOnClickListener {
-                onAppClick(app)
+                if (multiSelectMode) {
+                    togglePackageSelection(app.packageName)
+                } else {
+                    onAppClick(app)
+                }
             }
 
             itemView.setOnLongClickListener {
-                onAppLongClick?.invoke(app)
-                onAppLongClick != null
+                if (multiSelectMode) {
+                    togglePackageSelection(app.packageName)
+                    true
+                } else {
+                    onAppLongClick?.invoke(app)
+                    onAppLongClick != null
+                }
             }
 
             itemView.setOnKeyListener { _, keyCode, event ->
@@ -106,7 +192,11 @@ class AppLauncherAdapter(
                         keyCode == KeyEvent.KEYCODE_DPAD_CENTER ||
                         keyCode == KeyEvent.KEYCODE_ENTER)
                 ) {
-                    onAppClick(app)
+                    if (multiSelectMode) {
+                        togglePackageSelection(app.packageName)
+                    } else {
+                        onAppClick(app)
+                    }
                     true
                 } else {
                     false

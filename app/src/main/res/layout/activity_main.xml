@@ -160,6 +160,118 @@
                     android:textSize="11sp" />
             </LinearLayout>
 
+            <!-- One UI style Multi-Select Action Bar (Top Drawer) -->
+            <HorizontalScrollView
+                android:id="@+id/topMultiSelectBar"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="6dp"
+                android:background="#FF1A2233"
+                android:paddingHorizontal="8dp"
+                android:paddingVertical="5dp"
+                android:scrollbars="none"
+                android:visibility="gone">
+
+                <LinearLayout
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal">
+
+                    <Button
+                        android:id="@+id/btnTopSelectAll"
+                        style="@style/Widget.Material3.Button.OutlinedButton"
+                        android:layout_width="wrap_content"
+                        android:layout_height="30dp"
+                        android:layout_marginEnd="6dp"
+                        android:insetTop="0dp"
+                        android:insetBottom="0dp"
+                        android:minWidth="0dp"
+                        android:paddingHorizontal="10dp"
+                        android:text="All"
+                        android:textColor="#4C9AFF"
+                        android:textSize="11sp" />
+
+                    <TextView
+                        android:id="@+id/tvTopSelectCount"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginEnd="10dp"
+                        android:text="0 selected"
+                        android:textColor="#F5F7FA"
+                        android:textSize="12sp"
+                        android:textStyle="bold" />
+
+                    <Button
+                        android:id="@+id/btnTopMultiCreateFolder"
+                        style="@style/Widget.Material3.Button.TonalButton"
+                        android:layout_width="wrap_content"
+                        android:layout_height="30dp"
+                        android:layout_marginEnd="5dp"
+                        android:insetTop="0dp"
+                        android:insetBottom="0dp"
+                        android:minWidth="0dp"
+                        android:paddingHorizontal="10dp"
+                        android:text="+ Folder"
+                        android:textSize="11sp" />
+
+                    <Button
+                        android:id="@+id/btnTopMultiAddFolder"
+                        style="@style/Widget.Material3.Button.OutlinedButton"
+                        android:layout_width="wrap_content"
+                        android:layout_height="30dp"
+                        android:layout_marginEnd="5dp"
+                        android:insetTop="0dp"
+                        android:insetBottom="0dp"
+                        android:minWidth="0dp"
+                        android:paddingHorizontal="10dp"
+                        android:text="Folders…"
+                        android:textColor="#E5E7EB"
+                        android:textSize="11sp" />
+
+                    <Button
+                        android:id="@+id/btnTopMultiHide"
+                        style="@style/Widget.Material3.Button.OutlinedButton"
+                        android:layout_width="wrap_content"
+                        android:layout_height="30dp"
+                        android:layout_marginEnd="5dp"
+                        android:insetTop="0dp"
+                        android:insetBottom="0dp"
+                        android:minWidth="0dp"
+                        android:paddingHorizontal="10dp"
+                        android:text="Hide"
+                        android:textColor="#E5E7EB"
+                        android:textSize="11sp" />
+
+                    <Button
+                        android:id="@+id/btnTopMultiDual"
+                        style="@style/Widget.Material3.Button.OutlinedButton"
+                        android:layout_width="wrap_content"
+                        android:layout_height="30dp"
+                        android:layout_marginEnd="6dp"
+                        android:insetTop="0dp"
+                        android:insetBottom="0dp"
+                        android:minWidth="0dp"
+                        android:paddingHorizontal="10dp"
+                        android:text="2-Scr"
+                        android:textColor="#E5E7EB"
+                        android:textSize="11sp" />
+
+                    <Button
+                        android:id="@+id/btnTopMultiDone"
+                        style="@style/Widget.Material3.Button.OutlinedButton"
+                        android:layout_width="wrap_content"
+                        android:layout_height="30dp"
+                        android:insetTop="0dp"
+                        android:insetBottom="0dp"
+                        android:minWidth="0dp"
+                        android:paddingHorizontal="10dp"
+                        android:text="Done"
+                        android:textColor="#4C9AFF"
+                        android:textSize="11sp" />
+                </LinearLayout>
+            </HorizontalScrollView>
+
             <LinearLayout
                 android:id="@+id/topRecentSection"
                 android:layout_width="match_parent"
@@ -775,6 +887,118 @@
                     android:textColor="#D0D0D8"
                     android:textSize="10sp" />
             </LinearLayout>
+
+            <!-- One UI style Multi-Select Action Bar (Bottom Drawer) -->
+            <HorizontalScrollView
+                android:id="@+id/bottomMultiSelectBar"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="4dp"
+                android:background="#FF1A2233"
+                android:paddingHorizontal="6dp"
+                android:paddingVertical="4dp"
+                android:scrollbars="none"
+                android:visibility="gone">
+
+                <LinearLayout
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal">
+
+                    <Button
+                        android:id="@+id/btnBottomSelectAll"
+                        style="@style/Widget.Material3.Button.OutlinedButton"
+                        android:layout_width="wrap_content"
+                        android:layout_height="28dp"
+                        android:layout_marginEnd="5dp"
+                        android:insetTop="0dp"
+                        android:insetBottom="0dp"
+                        android:minWidth="0dp"
+                        android:paddingHorizontal="8dp"
+                        android:text="All"
+                        android:textColor="#4C9AFF"
+                        android:textSize="10sp" />
+
+                    <TextView
+                        android:id="@+id/tvBottomSelectCount"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginEnd="8dp"
+                        android:text="0"
+                        android:textColor="#F5F7FA"
+                        android:textSize="11sp"
+                        android:textStyle="bold" />
+
+                    <Button
+                        android:id="@+id/btnBottomMultiCreateFolder"
+                        style="@style/Widget.Material3.Button.TonalButton"
+                        android:layout_width="wrap_content"
+                        android:layout_height="28dp"
+                        android:layout_marginEnd="4dp"
+                        android:insetTop="0dp"
+                        android:insetBottom="0dp"
+                        android:minWidth="0dp"
+                        android:paddingHorizontal="8dp"
+                        android:text="+ Folder"
+                        android:textSize="10sp" />
+
+                    <Button
+                        android:id="@+id/btnBottomMultiAddFolder"
+                        style="@style/Widget.Material3.Button.OutlinedButton"
+                        android:layout_width="wrap_content"
+                        android:layout_height="28dp"
+                        android:layout_marginEnd="4dp"
+                        android:insetTop="0dp"
+                        android:insetBottom="0dp"
+                        android:minWidth="0dp"
+                        android:paddingHorizontal="8dp"
+                        android:text="Folders…"
+                        android:textColor="#E5E7EB"
+                        android:textSize="10sp" />
+
+                    <Button
+                        android:id="@+id/btnBottomMultiHide"
+                        style="@style/Widget.Material3.Button.OutlinedButton"
+                        android:layout_width="wrap_content"
+                        android:layout_height="28dp"
+                        android:layout_marginEnd="4dp"
+                        android:insetTop="0dp"
+                        android:insetBottom="0dp"
+                        android:minWidth="0dp"
+                        android:paddingHorizontal="8dp"
+                        android:text="Hide"
+                        android:textColor="#E5E7EB"
+                        android:textSize="10sp" />
+
+                    <Button
+                        android:id="@+id/btnBottomMultiDual"
+                        style="@style/Widget.Material3.Button.OutlinedButton"
+                        android:layout_width="wrap_content"
+                        android:layout_height="28dp"
+                        android:layout_marginEnd="5dp"
+                        android:insetTop="0dp"
+                        android:insetBottom="0dp"
+                        android:minWidth="0dp"
+                        android:paddingHorizontal="8dp"
+                        android:text="2-Scr"
+                        android:textColor="#E5E7EB"
+                        android:textSize="10sp" />
+
+                    <Button
+                        android:id="@+id/btnBottomMultiDone"
+                        style="@style/Widget.Material3.Button.OutlinedButton"
+                        android:layout_width="wrap_content"
+                        android:layout_height="28dp"
+                        android:insetTop="0dp"
+                        android:insetBottom="0dp"
+                        android:minWidth="0dp"
+                        android:paddingHorizontal="8dp"
+                        android:text="Done"
+                        android:textColor="#4C9AFF"
+                        android:textSize="10sp" />
+                </LinearLayout>
+            </HorizontalScrollView>
 
             <LinearLayout
                 android:id="@+id/bottomRecentSection"
