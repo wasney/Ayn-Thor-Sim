@@ -208,6 +208,20 @@ class SimulatorPrefs(context: Context) {
             .apply()
     }
 
+    fun renameFolder(oldName: String, newName: String) {
+        val cleanNew = newName.trim()
+        if (cleanNew.isEmpty() || cleanNew == oldName) return
+        val updated = (prefs.getStringSet(KEY_FOLDERS, emptySet()) ?: emptySet()).toMutableSet()
+        if (!updated.remove(oldName)) return
+        updated.add(cleanNew)
+        val mergedApps = getAppsInFolder(cleanNew) + getAppsInFolder(oldName)
+        prefs.edit()
+            .putStringSet(KEY_FOLDERS, updated)
+            .remove(PREFIX_FOLDER_APPS + oldName)
+            .putStringSet(PREFIX_FOLDER_APPS + cleanNew, mergedApps)
+            .apply()
+    }
+
     fun getAppsInFolder(folder: String): Set<String> {
         return prefs.getStringSet(PREFIX_FOLDER_APPS + folder, emptySet())?.toSet() ?: emptySet()
     }

@@ -58,6 +58,7 @@ import androidx.core.view.WindowInsetsControllerCompat
 import androidx.recyclerview.widget.GridLayoutManager
 import com.aynthor.simulator.databinding.ActivityMainBinding
 import com.aynthor.simulator.launcher.AppInfo
+import com.aynthor.simulator.launcher.DrawerItem
 import com.aynthor.simulator.launcher.AppLauncherAdapter
 import com.aynthor.simulator.launcher.AppRepository
 import androidx.activity.OnBackPressedCallback
@@ -205,7 +206,7 @@ class MainActivity : AppCompatActivity() {
             .daemon(false)
             .processNameSuffix("virtual_display_service")
             .debuggable(false)
-            .version(64)
+            .version(65)
     }
 
     private val serviceConnection = object : ServiceConnection {
@@ -308,6 +309,10 @@ class MainActivity : AppCompatActivity() {
                     exitDrawerMultiSelect(isTop = true)
                 } else if (::bottomLauncherAdapter.isInitialized && bottomLauncherAdapter.multiSelectMode) {
                     exitDrawerMultiSelect(isTop = false)
+                } else if (binding.bottomLauncherOverlay.visibility == View.VISIBLE && selectedBottomFolder != null) {
+                    openDrawerFolder(isTop = false, folderName = null)
+                } else if (binding.launcherOverlay.visibility == View.VISIBLE && selectedTopFolder != null) {
+                    openDrawerFolder(isTop = true, folderName = null)
                 } else if (::onboardingOverlay.isInitialized && onboardingOverlay.isInWizardMode) {
                     onboardingOverlay.dismiss(markOnboardingDone = true)
                 } else if (::settingsSheet.isInitialized && settingsSheet.isVisible) {
@@ -666,7 +671,9 @@ class MainActivity : AppCompatActivity() {
                 prefs.recordAppLaunch(app.packageName)
                 launchAppOnDisplay(app, activeTopDisplayId, hideLauncherAfter = true)
             },
+            onFolderClick = { folderName -> openDrawerFolder(isTop = true, folderName = folderName) },
             onAppLongClick = { app -> showAppContextMenu(app, isTopDrawer = true) },
+            onFolderLongClick = { folderName -> showFolderContextMenu(folderName, isTop = true) },
             onSelectionChanged = { updateMultiSelectBarUi(isTop = true) }
         )
         binding.appRecyclerView.apply {
@@ -680,7 +687,9 @@ class MainActivity : AppCompatActivity() {
                 binding.bottomLauncherOverlay.visibility = View.GONE
                 launchAppOnDisplay(app, activeBottomDisplayId, hideLauncherAfter = false)
             },
+            onFolderClick = { folderName -> openDrawerFolder(isTop = false, folderName = folderName) },
             onAppLongClick = { app -> showAppContextMenu(app, isTopDrawer = false) },
+            onFolderLongClick = { folderName -> showFolderContextMenu(folderName, isTop = false) },
             onSelectionChanged = { updateMultiSelectBarUi(isTop = false) }
         )
         binding.bottomAppRecyclerView.apply {
@@ -729,8 +738,20 @@ class MainActivity : AppCompatActivity() {
             refreshLauncherList()
         }
 
-        binding.btnTopFolder.setOnClickListener { showFolderPickerDialog(isTop = true) }
-        binding.btnBottomFolder.setOnClickListener { showFolderPickerDialog(isTop = false) }
+        binding.btnTopFolder.setOnClickListener {
+            if (selectedTopFolder != null) {
+                openDrawerFolder(isTop = true, folderName = null)
+            } else {
+                showFolderPickerDialog(isTop = true)
+            }
+        }
+        binding.btnBottomFolder.setOnClickListener {
+            if (selectedBottomFolder != null) {
+                openDrawerFolder(isTop = false, folderName = null)
+            } else {
+                showFolderPickerDialog(isTop = false)
+            }
+        }
 
         updateShowAllButtonText()
         updateDrawerFilterButtons()
@@ -772,11 +793,28 @@ class MainActivity : AppCompatActivity() {
         else -> "A-Z"
     }
 
+    private fun openDrawerFolder(isTop: Boolean, folderName: String?) {
+        exitDrawerMultiSelect(isTop)
+        if (isTop) {
+            selectedTopFolder = folderName
+        } else {
+            selectedBottomFolder = folderName
+        }
+        updateDrawerFilterButtons()
+        refreshLauncherList()
+        val adapter = if (isTop) launcherAdapter else bottomLauncherAdapter
+        val recycler = if (isTop) binding.appRecyclerView else binding.bottomAppRecyclerView
+        if (adapter.itemCount > 0) {
+            adapter.setSelectedPosition(0)
+            recycler.scrollToPosition(0)
+        }
+    }
+
     private fun updateDrawerFilterButtons() {
         binding.btnTopSort.text = sortLabel(prefs.getTopSortMode())
         binding.btnBottomSort.text = sortLabel(prefs.getBottomSortMode())
-        binding.btnTopFolder.text = selectedTopFolder ?: "All"
-        binding.btnBottomFolder.text = selectedBottomFolder ?: "All"
+        binding.btnTopFolder.text = selectedTopFolder?.let { "← $it" } ?: "Folders"
+        binding.btnBottomFolder.text = selectedBottomFolder?.let { "← $it" } ?: "Folders"
     }
 
     private fun updateShowAllButtonText() {
@@ -787,33 +825,72 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun filterAndSortApps(query: String, folder: String?, sortMode: Int): List<AppInfo> {
-        val showAll = prefs.isShowAllApps()
-        val hidden = prefs.getHiddenPackages()
-        val folderPkgs = folder?.let { prefs.getAppsInFolder(it) }
-
-        val filtered = allApps.filter { app ->
-            val passHidden = showAll || !hidden.contains(app.packageName)
-            val passFolder = folderPkgs == null || folderPkgs.contains(app.packageName)
-            val passQuery = query.isEmpty() ||
-                app.label.contains(query, ignoreCase = true) ||
-                app.packageName.contains(query, ignoreCase = true)
-            passHidden && passFolder && passQuery
-        }
-
+    private fun sortApps(apps: List<AppInfo>, sortMode: Int): List<AppInfo> {
         return when (sortMode) {
-            SimulatorPrefs.SORT_ZA -> filtered.sortedByDescending { it.label.lowercase(Locale.getDefault()) }
-            SimulatorPrefs.SORT_RECENT -> filtered.sortedWith(
+            SimulatorPrefs.SORT_ZA -> apps.sortedByDescending { it.label.lowercase(Locale.getDefault()) }
+            SimulatorPrefs.SORT_RECENT -> apps.sortedWith(
                 compareByDescending<AppInfo> { prefs.getLastLaunchTime(it.packageName) }
                     .thenBy { it.label.lowercase(Locale.getDefault()) }
             )
-            else -> filtered.sortedBy { it.label.lowercase(Locale.getDefault()) }
+            else -> apps.sortedBy { it.label.lowercase(Locale.getDefault()) }
         }
     }
 
+    private fun buildDrawerItems(query: String, openFolder: String?, sortMode: Int): List<DrawerItem> {
+        val showAll = prefs.isShowAllApps()
+        val hidden = prefs.getHiddenPackages()
+        val visibleApps = allApps.filter { app -> showAll || !hidden.contains(app.packageName) }
+
+        if (query.isNotEmpty()) {
+            val matching = visibleApps.filter { app ->
+                app.label.contains(query, ignoreCase = true) ||
+                    app.packageName.contains(query, ignoreCase = true)
+            }
+            return sortApps(matching, sortMode).map { DrawerItem.App(it) }
+        }
+
+        if (openFolder != null) {
+            val folderPkgs = prefs.getAppsInFolder(openFolder)
+            val inFolder = visibleApps.filter { folderPkgs.contains(it.packageName) }
+            return sortApps(inFolder, sortMode).map { DrawerItem.App(it) }
+        }
+
+        val visibleByPkg = visibleApps.associateBy { it.packageName }
+        val folderNames = prefs.getFolders()
+        val sortedFolderNames = if (sortMode == SimulatorPrefs.SORT_ZA) {
+            folderNames.sortedByDescending { it.lowercase(Locale.getDefault()) }
+        } else {
+            folderNames.sortedBy { it.lowercase(Locale.getDefault()) }
+        }
+
+        val folderedPackages = HashSet<String>()
+        val result = ArrayList<DrawerItem>(sortedFolderNames.size + visibleApps.size)
+        for (folderName in sortedFolderNames) {
+            val pkgs = prefs.getAppsInFolder(folderName)
+            folderedPackages.addAll(pkgs)
+            val folderApps = sortApps(pkgs.mapNotNull { visibleByPkg[it] }, sortMode)
+            result.add(DrawerItem.Folder(folderName, folderApps))
+        }
+
+        val looseApps = visibleApps.filter { !folderedPackages.contains(it.packageName) }
+        for (app in sortApps(looseApps, sortMode)) {
+            result.add(DrawerItem.App(app))
+        }
+        return result
+    }
+
     private fun refreshLauncherList() {
-        val topList = filterAndSortApps(topSearchQuery, selectedTopFolder, prefs.getTopSortMode())
-        val bottomList = filterAndSortApps(bottomSearchQuery, selectedBottomFolder, prefs.getBottomSortMode())
+        val existingFolders = prefs.getFolders().toSet()
+        if (selectedTopFolder != null && !existingFolders.contains(selectedTopFolder)) {
+            selectedTopFolder = null
+            updateDrawerFilterButtons()
+        }
+        if (selectedBottomFolder != null && !existingFolders.contains(selectedBottomFolder)) {
+            selectedBottomFolder = null
+            updateDrawerFilterButtons()
+        }
+        val topList = buildDrawerItems(topSearchQuery, selectedTopFolder, prefs.getTopSortMode())
+        val bottomList = buildDrawerItems(bottomSearchQuery, selectedBottomFolder, prefs.getBottomSortMode())
         launcherAdapter.submitList(topList)
         bottomLauncherAdapter.submitList(bottomList)
         if (topList.isNotEmpty() && launcherAdapter.selectedPosition < 0) {
@@ -910,32 +987,97 @@ class MainActivity : AppCompatActivity() {
 
     private fun showFolderPickerDialog(isTop: Boolean) {
         val folders = prefs.getFolders()
-        val options = mutableListOf("All Apps")
-        options.addAll(folders)
-        val createIdx = options.size
-        options.add("+ Create New Folder")
-        val autoIdx = options.size
-        options.add("Auto-Organize into Folders…")
+        val options = mutableListOf(
+            "+ Create New Folder",
+            "Auto-Organize into Folders…"
+        )
+        options.addAll(folders.map { "Open '$it'" })
 
         AlertDialog.Builder(this)
-            .setTitle(if (isTop) "Top Drawer Folder" else "Bottom Drawer Folder")
+            .setTitle("Manage Folders")
             .setItems(options.toTypedArray()) { _, which ->
                 when (which) {
-                    0 -> {
-                        if (isTop) selectedTopFolder = null else selectedBottomFolder = null
-                        updateDrawerFilterButtons()
-                        refreshLauncherList()
-                    }
-                    createIdx -> showCreateFolderDialog()
-                    autoIdx -> showAutoOrganizeFoldersDialog()
+                    0 -> showCreateFolderDialog()
+                    1 -> showAutoOrganizeFoldersDialog()
                     else -> {
-                        val chosen = folders[which - 1]
-                        if (isTop) selectedTopFolder = chosen else selectedBottomFolder = chosen
-                        updateDrawerFilterButtons()
-                        refreshLauncherList()
+                        val chosen = folders[which - 2]
+                        openDrawerFolder(isTop, chosen)
                     }
                 }
             }
+            .show()
+    }
+
+    private fun showFolderContextMenu(folderName: String, isTop: Boolean) {
+        val actions = arrayOf(
+            "Open Folder",
+            "Rename Folder…",
+            "Add / Remove Apps…",
+            "Delete Folder"
+        )
+        AlertDialog.Builder(this)
+            .setTitle(folderName)
+            .setItems(actions) { _, which ->
+                when (which) {
+                    0 -> openDrawerFolder(isTop, folderName)
+                    1 -> showRenameFolderDialog(folderName)
+                    2 -> showEditFolderAppsDialog(folderName)
+                    3 -> {
+                        AlertDialog.Builder(this)
+                            .setTitle("Delete '$folderName'?")
+                            .setMessage("Apps inside will return to the main app grid. Nothing will be uninstalled.")
+                            .setPositiveButton("Delete") { _, _ ->
+                                prefs.removeFolder(folderName)
+                                if (selectedTopFolder == folderName) selectedTopFolder = null
+                                if (selectedBottomFolder == folderName) selectedBottomFolder = null
+                                updateDrawerFilterButtons()
+                                refreshLauncherList()
+                                Toast.makeText(this, "Deleted folder '$folderName'", Toast.LENGTH_SHORT).show()
+                            }
+                            .setNegativeButton("Cancel", null)
+                            .show()
+                    }
+                }
+            }
+            .show()
+    }
+
+    private fun showRenameFolderDialog(oldName: String) {
+        val input = EditText(this).apply {
+            setText(oldName)
+            setSelection(oldName.length)
+            setSingleLine(true)
+        }
+        AlertDialog.Builder(this)
+            .setTitle("Rename Folder")
+            .setView(input)
+            .setPositiveButton("Rename") { _, _ ->
+                val newName = input.text.toString().trim()
+                if (newName.isNotEmpty() && newName != oldName) {
+                    prefs.renameFolder(oldName, newName)
+                    if (selectedTopFolder == oldName) selectedTopFolder = newName
+                    if (selectedBottomFolder == oldName) selectedBottomFolder = newName
+                    updateDrawerFilterButtons()
+                    refreshLauncherList()
+                }
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private fun showEditFolderAppsDialog(folderName: String) {
+        val sortedApps = allApps.sortedBy { it.label.lowercase(Locale.getDefault()) }
+        val currentPkgs = prefs.getAppsInFolder(folderName)
+        val labels = sortedApps.map { it.label }.toTypedArray()
+        val checked = BooleanArray(sortedApps.size) { i ->
+            currentPkgs.contains(sortedApps[i].packageName)
+        }
+        AlertDialog.Builder(this)
+            .setTitle("Apps in '$folderName'")
+            .setMultiChoiceItems(labels, checked) { _, idx, isChecked ->
+                prefs.setAppInFolder(folderName, sortedApps[idx].packageName, isChecked)
+            }
+            .setPositiveButton("Done") { _, _ -> refreshLauncherList() }
             .show()
     }
 
@@ -1023,12 +1165,15 @@ class MainActivity : AppCompatActivity() {
                         totalAssigned++
                     }
                 }
+                selectedTopFolder = null
+                selectedBottomFolder = null
+                updateDrawerFilterButtons()
+                refreshLauncherList()
                 Toast.makeText(
                     this,
                     "Organized $totalAssigned apps into ${buckets.size} folders",
                     Toast.LENGTH_SHORT
                 ).show()
-                refreshLauncherList()
             }
             .setNegativeButton("Cancel", null)
             .show()
@@ -1046,7 +1191,8 @@ class MainActivity : AppCompatActivity() {
                 val name = input.text.toString().trim()
                 if (name.isNotEmpty()) {
                     prefs.addFolder(name)
-                    Toast.makeText(this, "Folder '$name' created. Long-press any app to add it.", Toast.LENGTH_SHORT).show()
+                    refreshLauncherList()
+                    Toast.makeText(this, "Folder '$name' created. Long-press it or any app to add apps.", Toast.LENGTH_SHORT).show()
                 }
             }
             .setNegativeButton("Cancel", null)
@@ -2822,14 +2968,23 @@ class MainActivity : AppCompatActivity() {
             KeyEvent.KEYCODE_DPAD_UP -> { moveTopLauncherSelection(-5); true }
             KeyEvent.KEYCODE_DPAD_DOWN -> { moveTopLauncherSelection(5); true }
             KeyEvent.KEYCODE_BUTTON_A, KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER -> {
-                launcherAdapter.getSelectedItem()?.let { app ->
-                    prefs.recordAppLaunch(app.packageName)
-                    launchAppOnDisplay(app, activeTopDisplayId, hideLauncherAfter = true)
+                when (val item = launcherAdapter.getSelectedItem()) {
+                    is DrawerItem.Folder -> openDrawerFolder(isTop = true, folderName = item.name)
+                    is DrawerItem.App -> {
+                        prefs.recordAppLaunch(item.app.packageName)
+                        launchAppOnDisplay(item.app, activeTopDisplayId, hideLauncherAfter = true)
+                    }
+                    null -> Unit
                 }
                 true
             }
             KeyEvent.KEYCODE_BUTTON_B -> {
-                binding.etTopSearch.clearFocus(); binding.launcherOverlay.visibility = View.GONE
+                if (selectedTopFolder != null) {
+                    openDrawerFolder(isTop = true, folderName = null)
+                } else {
+                    binding.etTopSearch.clearFocus()
+                    binding.launcherOverlay.visibility = View.GONE
+                }
                 true
             }
             KeyEvent.KEYCODE_BUTTON_L1 -> { cycleTopFolder(-1); true }
