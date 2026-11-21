@@ -1035,7 +1035,7 @@ class MainActivity : AppCompatActivity() {
                     for (pkg in pkgs) {
                         prefs.setAppInFolder(name, pkg, true)
                     }
-                    Toast.makeText(this, "Added ${pkgs.size} apps to "$name"", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(this, "Added ${pkgs.size} apps to '$name'", Toast.LENGTH_SHORT).show()
                     exitDrawerMultiSelect(isTop)
                     refreshLauncherList()
                 }
@@ -1053,9 +1053,9 @@ class MainActivity : AppCompatActivity() {
 
         val options = mutableListOf<String>()
         if (currentFolder != null) {
-            options.add("Remove ${pkgs.size} apps from "$currentFolder"")
+            options.add("Remove ${pkgs.size} apps from '$currentFolder'")
         }
-        options.addAll(folders.map { "Add to "$it"" })
+        options.addAll(folders.map { "Add to '$it'" })
         options.add("+ Create New Folder…")
 
         AlertDialog.Builder(this)
@@ -1067,7 +1067,7 @@ class MainActivity : AppCompatActivity() {
                         for (pkg in pkgs) {
                             prefs.setAppInFolder(currentFolder, pkg, false)
                         }
-                        Toast.makeText(this, "Removed ${pkgs.size} apps from "$currentFolder"", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(this, "Removed ${pkgs.size} apps from '$currentFolder'", Toast.LENGTH_SHORT).show()
                         exitDrawerMultiSelect(isTop)
                         refreshLauncherList()
                         return@setItems
@@ -1079,7 +1079,7 @@ class MainActivity : AppCompatActivity() {
                     for (pkg in pkgs) {
                         prefs.setAppInFolder(target, pkg, true)
                     }
-                    Toast.makeText(this, "Added ${pkgs.size} apps to "$target"", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(this, "Added ${pkgs.size} apps to '$target'", Toast.LENGTH_SHORT).show()
                     exitDrawerMultiSelect(isTop)
                     refreshLauncherList()
                 } else {
